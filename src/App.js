@@ -17,6 +17,9 @@ function App() {
         <Route path="/payments" element={<Payments />} />
         <Route path="/performance" element={<Performance />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/payments" element={<Payments />} />
+        <Route path="/performance" element={<Performance />} />
+        <Route path="/settings" element={<Settings />} />
       </Routes>
     </Router>
   );
