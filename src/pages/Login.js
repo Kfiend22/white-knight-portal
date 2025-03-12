@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { TextField, Button, Link, Typography, Container, Box } from '@mui/material';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 const Login = () => {
   const [formData, setFormData] = useState({ username: '', password: '' });
   const [errors, setErrors] = useState({});
+  const [loginError, setLoginError] = useState('');
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -18,15 +21,23 @@ const Login = () => {
     return newErrors;
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     const newErrors = validateForm();
     setErrors(newErrors);
 
     if (Object.keys(newErrors).length === 0) {
-      // TODO: Implement authentication logic
-      console.log('Form submitted:', formData);
-      // Redirect user to the last opened page or dashboard
+      try {
+        const response = await axios.post('/api/auth/login', {
+          email: formData.username,
+          password: formData.password,
+        });
+        console.log('Login successful:', response.data);
+        // Handle successful login: store token, redirect to last opened page or dashboard
+      } catch (error) {
+        setLoginError(error.response?.data?.message || 'Login failed. Please try again.');
+        console.error('Login failed:', error.response?.data);
+      }
     }
   };
 
@@ -63,6 +74,11 @@ const Login = () => {
             error={Boolean(errors.password)}
             helperText={errors.password}
           />
+          {loginError && (
+            <Typography color="error" variant="body2">
+              {loginError}
+            </Typography>
+          )}
           <Button
             fullWidth
             variant="contained"
