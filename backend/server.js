@@ -1,75 +1,82 @@
-  require('dotenv').config();
-  const cors = require('cors');
-  const express = require('express');
-  const mongoose = require('mongoose');
-  const connectDB = require('./config/db');
-  const applicationRoutes = require('./routes/Applications');
-  const net = require('net');
-  const bodyParser = require('body-parser');
-  const userRoutes = require('./routes/userRoutes');
-  const authRoutes = require('./routes/authRoutes');
-  
-  const app = express();
+require('dotenv').config();
+const cors = require('cors');
+const http = require('http');
+const express = require('express');
+const path = require('path');
+const connectDB = require('./config/db');
+const applicationRoutes = require('./routes/Applications');
+const bodyParser = require('body-parser');
+const userRoutes = require('./routes/userRoutes');
+const authRoutes = require('./routes/authRoutes');
+const regionRoutes = require('./routes/regionRoutes');
+const settingsRoutes = require('./routes/settingsRoutes');
+const jobRoutes = require('./routes/jobRoutes');
+const driverRoutes = require('./routes/driverRoutes');
+const locationRoutes = require('./routes/locationRoutes');
+const { initSocket } = require('./socket');
 
-  const PORT = process.env.PORT || 5000;
-  const MONGODB_URI = 'mongodb://localhost/white-knight-portal';
+const app = express();
 
-  // Add this configuration when connecting to MongoDB
-  mongoose.connect(process.env.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
+const PORT = process.env.PORT || 5000;
+
+// Connect to MongoDB using config
+connectDB();
+
+app.use(bodyParser.json());
+app.use(cors());
+
+// Serve static files
+app.use('/images', express.static('public/images'));
+app.use('/uploads', express.static('uploads'));
+app.use('/csvs', express.static('public/csvs'));
+
+// Routes
+app.use('/api/v1/applications', applicationRoutes);
+app.use('/api/v1/users', userRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/regions', regionRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/jobs', jobRoutes);
+app.use('/api/drivers', driverRoutes);
+app.use('/api/location', locationRoutes);
+app.use('/api/user', userRoutes); // Add this route for user/companies endpoint
+
+// In production, serve the frontend build folder so that unknown routes return index.html
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../build')));
+  app.get('*', (req, res) =>
+    res.sendFile(path.join(__dirname, '../build', 'index.html'))
+  );
+} else {
+  // In development, if the root route is accessed, simply send a friendly message
+  app.get('/', (req, res) => {
+    res.send('API is running...');
   });
+}
 
-// Add this to disable strict schema validation temporarily
-mongoose.set('strictQuery', false);
+// Health check endpoint
+app.get('/api/auth/health', (req, res) => {
+  res.status(200).json({ status: 'ok', message: 'Server is running' });
+});
 
-const db = mongoose.connection;
-db.on('connected', () => console.log('Connected to MongoDB'));
+// Optional: a catch-all route for unknown API calls (only for /api routes)
+app.use('/api', (req, res) => {
+  console.log(`No API route found for ${req.method} ${req.url}`);
+  res.status(404).send('API route not found');
+});
 
-const emailRoutes = require('./routes/emailRoutes');
-app.use('/api/v1/email', emailRoutes);
+// Error handling middleware
+app.use((err, req, res, next) => {
+  res.status(500).json({ message: err.message });
+});
 
-  // Enable CORS
-  app.use(cors({
-    origin: 'http://localhost:3000',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    credentials: true
-  }));
+// Create an HTTP server instance
+const server = http.createServer(app);
 
-  // Middleware to parse JSON bodies
-  app.use(express.json());
+// Initialize Socket.IO
+initSocket(server);
 
-  // Middleware to log all incoming requests
-  app.use((req, res, next) => {
-    console.log(`Received ${req.method} request to ${req.url}`);
-    next();
-  });
-
-  // Mount the router
-  app.use('/api/v1', applicationRoutes);
-
-  // Middleware
-  app.use('/images', express.static('public/images')); // For profile images
-
-  // Routes
-  app.use('/api/v1/applications', require('./routes/Applications'));
-  app.use('/api/v1/users', userRoutes);
-  app.use('/api/auth', authRoutes);
-  // Serve static files from 'uploads' directory
-  app.use('/uploads', express.static('uploads'));
-
-  // Catch-all route for unmatched requests
-  app.use('*', (req, res) => {
-    console.log(`No route found for ${req.method} ${req.url}`);
-    res.status(404).send('Not Found');
-  });
-
-  // Error handling middleware
-  app.use((err, req, res, next) => {
-    res.status(500).json({ message: err.message });
-  });
-
-  // Start the server
-  app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-  });
+// Start the server
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});

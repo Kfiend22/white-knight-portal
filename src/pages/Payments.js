@@ -199,7 +199,7 @@ function Payments() {
       <SideMenu />
 
       {/* Main Content */}
-      <Container maxWidth="md">
+      <Container maxWidth={false}>
         <Box mt={4} mb={2}>
           <Typography variant="h4">Payments</Typography>
         </Box>
@@ -283,4 +283,3 @@ function Payments() {
 }
 
 export default Payments;
-

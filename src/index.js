@@ -3,9 +3,14 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
+import setupAxiosInterceptors from './utils/axiosConfig';
 
-// Simulate authentication by setting a token in localStorage
-localStorage.setItem('token', 'sample-token');
+// Initialize axios interceptors for authentication
+setupAxiosInterceptors();
+
+// For development/testing purposes, uncomment this line to clear localStorage on app start
+// This helps test the authentication flow
+// localStorage.clear();
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

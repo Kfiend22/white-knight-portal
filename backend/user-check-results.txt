@@ -1,0 +1,29 @@
+Found 2 users
+
+User: owner
+  - Primary Role: OW
+  - Legacy Role: OW
+  - Secondary Roles: {"admin":true,"answeringService":false,"dispatcher":false,"driver":false}
+  - Vendor Number: OWNER27823490
+  - Legacy Vendor ID: OWNER27823490
+  - First Name: System
+  - Last Name: Owner
+  - Legacy First Name: System
+  - Legacy Last Name: Owner
+  - Is Active: Yes
+  - Is On Duty: No
+  - Audit Log: 2 entries
+
+User: Cline
+  - Primary Role: OW
+  - Legacy Role: OW
+  - Secondary Roles: {"admin":true,"answeringService":false,"dispatcher":false,"driver":false}
+  - Vendor Number: USER30656048
+  - Legacy Vendor ID: USER30656048
+  - First Name: Cline
+  - Last Name: Cline
+  - Legacy First Name: Cline
+  - Legacy Last Name: Cline
+  - Is Active: Yes
+  - Is On Duty: No
+  - Audit Log: 2 entries

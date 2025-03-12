@@ -294,7 +294,7 @@ function Performance() {
       <SideMenu />
 
       {/* Main Content */}
-      <Container maxWidth="lg">
+      <Container maxWidth={false}>
         <Box mt={4} mb={2} display="flex" justifyContent="space-between" alignItems="center">
           <Typography variant="h4">Performance</Typography>
           <Box display="flex" alignItems="center">

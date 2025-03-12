@@ -1,5 +1,5 @@
 // Submissions.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Container,
   Box,
@@ -8,7 +8,12 @@ import {
   Typography,
   TextField,
   Button,
+  CircularProgress,
+  Alert,
+  IconButton,
+  InputAdornment,
 } from '@mui/material';
+import { Search as SearchIcon, Clear as ClearIcon } from '@mui/icons-material';
 import SideMenu from '../components/SideMenu';
 import Apps from '../components/Submissions/Apps';
 import AdvancedAppSearch from '../components/Submissions/AdvancedAppSearch';
@@ -16,16 +21,56 @@ import AdvancedAppSearch from '../components/Submissions/AdvancedAppSearch';
 function Submissions() {
   const [tabValue, setTabValue] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchInputValue, setSearchInputValue] = useState('');
   const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
   const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  
+  // Tab labels and corresponding step values
+  const tabs = [
+    { label: "New", step: 0 },
+    { label: "In Review", step: 1 },
+    { label: "Approved", step: 2 },
+    { label: "Denied", step: 3 },
+    { label: "Completed", step: 4 }
+  ];
+  
+  // Check if user is authenticated
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      // Redirect to login if not authenticated
+      window.location.href = '/login';
+    }
+  }, []);
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
+    // Clear search criteria when changing tabs
+    setSearchQuery('');
+    setSearchInputValue('');
     setAdvancedSearchCriteria({});
   };
 
   const handleSearchChange = (event) => {
-    setSearchQuery(event.target.value);
+    setSearchInputValue(event.target.value);
+  };
+  
+  const handleSearchSubmit = () => {
+    setSearchQuery(searchInputValue);
+  };
+  
+  const handleSearchClear = () => {
+    setSearchInputValue('');
+    setSearchQuery('');
+  };
+  
+  // Handle Enter key in search field
+  const handleSearchKeyPress = (event) => {
+    if (event.key === 'Enter') {
+      handleSearchSubmit();
+    }
   };
 
   const handleAdvancedSearchOpen = () => {
@@ -44,7 +89,7 @@ function Submissions() {
   return (
     <div>
       <SideMenu />
-      <Container maxWidth="lg">
+      <Container maxWidth={false}>
         <Box mt={4}>
           <Typography variant="h4">Submissions</Typography>
           {/* Tabs Navigation */}
@@ -55,11 +100,9 @@ function Submissions() {
             variant="scrollable"
             scrollButtons="auto"
           >
-            <Tab label="New" />
-            <Tab label="In Review" />
-            <Tab label="Approved" />
-            <Tab label="Denied" />
-            <Tab label="Completed" />
+            {tabs.map((tab, index) => (
+              <Tab key={index} label={tab.label} />
+            ))}
           </Tabs>
           {/* Search Functionality */}
           <Box display="flex" justifyContent="flex-end" mt={2}>
@@ -67,14 +110,32 @@ function Submissions() {
               label="Search"
               variant="outlined"
               size="small"
-              value={searchQuery}
+              value={searchInputValue}
               onChange={handleSearchChange}
+              onKeyPress={handleSearchKeyPress}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    {searchInputValue && (
+                      <IconButton
+                        aria-label="clear search"
+                        onClick={handleSearchClear}
+                        edge="end"
+                        size="small"
+                      >
+                        <ClearIcon />
+                      </IconButton>
+                    )}
+                  </InputAdornment>
+                ),
+              }}
             />
             <Button
               variant="contained"
               color="primary"
-              onClick={() => setSearchQuery(searchQuery)}
-              style={{ marginLeft: 8 }}
+              onClick={handleSearchSubmit}
+              startIcon={<SearchIcon />}
+              sx={{ ml: 1 }}
             >
               Search
             </Button>
@@ -82,48 +143,39 @@ function Submissions() {
               variant="contained"
               color="primary"
               onClick={handleAdvancedSearchOpen}
-              style={{ marginLeft: 8 }}
+              sx={{ ml: 1 }}
             >
               Advanced Search
             </Button>
           </Box>
+          
+          {/* Error display */}
+          {error && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {error}
+            </Alert>
+          )}
           {/* Apps Component */}
-          <Box mt={2}>
-            {tabValue === 0 && (
-              <Apps
-                step={0}
-                searchQuery={searchQuery}
-                advancedSearchCriteria={advancedSearchCriteria}
-              />
+          <Box mt={2} position="relative">
+            {isLoading && (
+              <Box 
+                position="absolute" 
+                top="50%" 
+                left="50%" 
+                sx={{ transform: 'translate(-50%, -50%)' }}
+              >
+                <CircularProgress />
+              </Box>
             )}
-            {tabValue === 1 && (
-              <Apps
-                step={1}
-                searchQuery={searchQuery}
-                advancedSearchCriteria={advancedSearchCriteria}
-              />
-            )}
-            {tabValue === 2 && (
-              <Apps
-                step={2}
-                searchQuery={searchQuery}
-                advancedSearchCriteria={advancedSearchCriteria}
-              />
-            )}
-            {tabValue === 3 && (
-              <Apps
-                step={3}
-                searchQuery={searchQuery}
-                advancedSearchCriteria={advancedSearchCriteria}
-              />
-            )}
-            {tabValue === 4 && (
-              <Apps
-                step={4}
-                searchQuery={searchQuery}
-                advancedSearchCriteria={advancedSearchCriteria}
-              />
-            )}
+            
+            {/* Render the current tab's content */}
+            <Apps
+              step={tabs[tabValue].step}
+              searchQuery={searchQuery}
+              advancedSearchCriteria={advancedSearchCriteria}
+              setIsLoading={setIsLoading}
+              setError={setError}
+            />
           </Box>
           {/* Advanced Search Dialog */}
           <AdvancedAppSearch

@@ -1,5 +1,5 @@
 // SideMenu.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   AppBar,
   Toolbar,
@@ -23,6 +23,7 @@ import {
   Settings as SettingsIcon,
   Notifications as NotificationsIcon,
   Description as SubmissionsIcon,
+  Public as RegionsIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
@@ -31,14 +32,16 @@ import EditProfileDialog from '../SideMenu/EditProfileDialog';
 import UpdateTaxInfoDialog from '../SideMenu/UpdateTaxInfoDialog';
 import UploadCOIDialog from '../SideMenu/UploadCOIDialog';
 import UploadBackgroundChecksDialog from '../SideMenu/UploadBKChecksDialog';
+import LogoutConfirmDialog from './LogoutConfirmDialog';
 
-const defaultProfileImage = 'public/images/default-profile.png';
+const defaultProfileImage = '/images/default-profile.png';
 
 function SideMenu() {
   const navigate = useNavigate();
 
   // State variables
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [userRole, setUserRole] = useState(null);
 
   // Avatar Dropdown Menu State
   const [anchorEl, setAnchorEl] = useState(null);
@@ -52,6 +55,9 @@ function SideMenu() {
     openUploadBackgroundChecksDialog,
     setOpenUploadBackgroundChecksDialog,
   ] = useState(false);
+  
+  // Logout confirmation dialog state
+  const [openLogoutDialog, setOpenLogoutDialog] = useState(false);
 
   // State for Profile Data
   const [profileData, setProfileData] = useState({
@@ -81,6 +87,26 @@ function SideMenu() {
     setAnchorEl(null);
   };
 
+  const handleLogout = () => {
+    // Show logout confirmation dialog
+    setOpenLogoutDialog(true);
+    
+    // Close the profile menu
+    handleCloseProfileMenu();
+  };
+  
+  const handleConfirmLogout = () => {
+    // Remove token and user data from localStorage
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    
+    // Close the logout dialog
+    setOpenLogoutDialog(false);
+    
+    // Navigate to login page
+    navigate('/login');
+  };
+
   const handleEditProfile = () => {
     setOpenEditProfileDialog(true);
     handleCloseProfileMenu();
@@ -101,18 +127,66 @@ function SideMenu() {
     handleCloseProfileMenu();
   };
 
-  // Fetch user profile data when component mounts
+  // Fetch user profile data and role when component mounts
   useEffect(() => {
     fetchUserProfile();
+    
+    // Get user role from localStorage
+    try {
+      const userJson = localStorage.getItem('user');
+      console.log('User data from localStorage:', userJson);
+      
+      if (userJson) {
+        const user = JSON.parse(userJson);
+        console.log('Parsed user data:', user);
+        
+        // Check for primaryRole first, then fall back to legacy role field
+        if (user && (user.primaryRole || user.role)) {
+          const effectiveRole = user.primaryRole || user.role;
+          console.log('Setting user role:', effectiveRole);
+          setUserRole(effectiveRole);
+        } else {
+          console.warn('No role found in user data');
+          // Set a default role to ensure menu items load
+          setUserRole('SP'); // Service Provider as default
+        }
+      } else {
+        console.warn('No user data found in localStorage');
+        // Set a default role to ensure menu items load
+        setUserRole('SP'); // Service Provider as default
+      }
+    } catch (error) {
+      console.error('Error parsing user data from localStorage:', error);
+      // Set a default role to ensure menu items load
+      setUserRole('SP'); // Service Provider as default
+    }
+    
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchUserProfile = () => {
-    fetch('/api/user/profile', {
-      headers: authHeader(),
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.warn('No token found in localStorage for profile fetch');
+      return;
+    }
+
+    console.log('Fetching user profile with token:', token ? 'Token exists' : 'No token');
+    
+    fetch('/api/v1/users/profile', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
     })
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`Profile fetch failed with status: ${res.status}`);
+        }
+        return res.json();
+      })
       .then((data) => {
+        console.log('Profile data received:', data);
         setProfileData(data);
       })
       .catch((error) => {
@@ -123,7 +197,10 @@ function SideMenu() {
   // Helper function to get auth headers
   const authHeader = () => {
     const token = localStorage.getItem('token');
-    return { Authorization: `Bearer ${token}` };
+    return { 
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
   };
 
   // Drawer toggle
@@ -131,14 +208,26 @@ function SideMenu() {
     setDrawerOpen(!drawerOpen);
   };
 
-  // Navigation items
-  const navItems = [
-    { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
-    { text: 'Submissions', icon: <SubmissionsIcon />, path: '/submissions' },
-    { text: 'Payments', icon: <PaymentIcon />, path: '/payments' },
-    { text: 'Performance', icon: <BarChartIcon />, path: '/performance' },
-    { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
-  ];
+  // Navigation items based on user role
+  const navItems = useMemo(() => {
+    console.log('Building nav items with userRole:', userRole);
+    
+    const items = [
+      { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', roles: ['OW', 'RM', 'SP', 'MN', 'DV', 'DP'] },
+      { text: 'Submissions', icon: <SubmissionsIcon />, path: '/submissions', roles: ['OW', 'RM'] },
+      { text: 'Payments', icon: <PaymentIcon />, path: '/payments', roles: ['OW', 'RM', 'SP', 'MN', 'DP'] },
+      { text: 'Performance', icon: <BarChartIcon />, path: '/performance', roles: ['OW', 'RM', 'SP', 'MN', 'DP'] },
+      { text: 'Settings', icon: <SettingsIcon />, path: '/settings', roles: ['OW', 'RM', 'SP', 'MN', 'DP'] },
+    ];
+    
+    // Add Regions menu item for Owner role only
+    if (userRole === 'OW') {
+      console.log('Adding Regions menu item for Owner');
+      items.push({ text: 'Regions', icon: <RegionsIcon />, path: '/regions', roles: ['OW'] });
+    }
+    
+    return items;
+  }, [userRole]);
 
   return (
     <>
@@ -167,7 +256,7 @@ function SideMenu() {
               src={
                 profileData.profilePicture
                   ? profileData.profilePicture
-                  : '/path/to/default/profile.jpg'
+                  : defaultProfileImage
               }
             />
           </IconButton>
@@ -190,6 +279,9 @@ function SideMenu() {
             <MenuItem onClick={handleUploadBackgroundChecks}>
               Upload Background Checks
             </MenuItem>
+            <MenuItem onClick={handleLogout}>
+              Log Out
+            </MenuItem>
           </Menu>
         </Toolbar>
       </AppBar>
@@ -198,13 +290,21 @@ function SideMenu() {
       <Drawer anchor="left" open={drawerOpen} onClose={toggleDrawer}>
         <Box sx={{ width: 250 }} role="presentation" onClick={toggleDrawer}>
           <List>
-            {navItems.map((item) => (
-              <ListItem button key={item.text} onClick={() => navigate(item.path)}>
-                <ListItemIcon>{item.icon}</ListItemIcon>
-                <ListItemText primary={item.text} />
-                <ListItem component="div" button={true.toString()} />
+            {userRole ? (
+              navItems
+                .filter(item => !item.roles || item.roles.includes(userRole))
+                .map((item) => (
+                  <ListItem button key={item.text} onClick={() => navigate(item.path)}>
+                    <ListItemIcon>{item.icon}</ListItemIcon>
+                    <ListItemText primary={item.text} />
+                    <ListItem component="div" button={true.toString()} />
+                  </ListItem>
+                ))
+            ) : (
+              <ListItem>
+                <ListItemText primary="Loading menu items..." />
               </ListItem>
-            ))}
+            )}
           </List>
         </Box>
       </Drawer>
@@ -231,6 +331,13 @@ function SideMenu() {
       <UploadBackgroundChecksDialog
         open={openUploadBackgroundChecksDialog}
         onClose={() => setOpenUploadBackgroundChecksDialog(false)}
+      />
+      
+      {/* Logout Confirmation Dialog */}
+      <LogoutConfirmDialog
+        open={openLogoutDialog}
+        onClose={() => setOpenLogoutDialog(false)}
+        onConfirm={handleConfirmLogout}
       />
     </>
   );

@@ -1,3 +1,5 @@
 {
-    "terminal.integrated.shellIntegration.enabled": true
+    "terminal.integrated.shellIntegration.enabled": true,
+    "cline.modelSettings.o3Mini.reasoningEffort": "high",
+    "cline.chromeExecutablePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
 }

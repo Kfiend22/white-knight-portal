@@ -36,7 +36,7 @@ import {
 import { Resizable } from 're-resizable';
 
 
-function Apps({ step, searchQuery, advancedSearchCriteria }) {
+function Apps({ step, searchQuery, advancedSearchCriteria, setIsLoading, setError }) {
   const [applications, setApplications] = useState([]);
   const [expandedRows, setExpandedRows] = useState({});
   const [confirmDialog, setConfirmDialog] = useState({
@@ -47,16 +47,27 @@ function Apps({ step, searchQuery, advancedSearchCriteria }) {
   const [editingFields, setEditingFields] = useState({});
   const [vendorIds, setVendorIds] = useState({});
 
+  // Helper function to get auth headers
+  const getAuthHeader = () => {
+    const token = localStorage.getItem('token');
+    return { 
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+  };
   
   const fetchApplications = async () => {
+    // Notify parent component that loading has started
+    if (setIsLoading) setIsLoading(true);
+    if (setError) setError(null);
+    
     try {
-      let url = `http://localhost:5000/api/v1/applications?step=${step}`;
+      let url = `/api/v1/applications?step=${step}`;
       
       if (searchQuery) {
         url += `&search=${encodeURIComponent(searchQuery)}`;
       }
   
-
       // Add advanced search parameters to the URL
       if (advancedSearchCriteria && Object.keys(advancedSearchCriteria).length > 0) {
         // Convert the advancedSearchCriteria object into query parameters
@@ -80,15 +91,30 @@ function Apps({ step, searchQuery, advancedSearchCriteria }) {
         addParams(advancedSearchCriteria);
         url += `&${params.toString()}`;
       }
+      
+      console.log('Fetching applications from URL:', url);
+      console.log('Using auth headers:', getAuthHeader());
   
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        headers: getAuthHeader()
+      });
+      
+      console.log('Applications API response status:', response.status);
+      
       if (!response.ok) {
-        throw new Error('Failed to fetch applications');
+        throw new Error(`Failed to fetch applications: ${response.statusText}`);
       }
+      
       const data = await response.json();
-      setApplications(data.applications);
+      console.log('Applications data received:', data);
+      
+      setApplications(data.applications || []);
     } catch (error) {
       console.error('Error fetching applications:', error);
+      if (setError) setError(error.message || 'Failed to load applications');
+    } finally {
+      // Notify parent component that loading has finished
+      if (setIsLoading) setIsLoading(false);
     }
   };  
 
@@ -147,11 +173,9 @@ function Apps({ step, searchQuery, advancedSearchCriteria }) {
     // Log the data being sent
     console.log('Data being sent to create user:', newUser);
   
-    fetch('http://localhost:5000/api/v1/users', {
+    fetch('/api/v1/users', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getAuthHeader(),
       body: JSON.stringify(newUser),
     })
       .then(response => {
@@ -177,8 +201,9 @@ function Apps({ step, searchQuery, advancedSearchCriteria }) {
     let newStep = null;
 
     if (action === 'delete') {
-      fetch(`http://localhost:5000/api/v1/applications/${applicationId}`, {
+      fetch(`/api/v1/applications/${applicationId}`, {
         method: 'DELETE',
+        headers: getAuthHeader()
       })
         .then(response => {
           if (!response.ok) throw new Error('Failed to delete');
@@ -199,12 +224,9 @@ function Apps({ step, searchQuery, advancedSearchCriteria }) {
     if (currentStep === 0) {
       newStep = 1;
       // Enhanced fetch call with error handling
-      fetch('http://localhost:5000/api/v1/email/welcome', {
+      fetch('/api/v1/email/welcome', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
+        headers: getAuthHeader(),
         body: JSON.stringify({
           email: application.email,
           vendorId: application.vendorId,
@@ -240,11 +262,9 @@ function Apps({ step, searchQuery, advancedSearchCriteria }) {
       
       console.log('Sending updated application:', updatedApplication);
   
-      fetch(`http://localhost:5000/api/v1/applications/${applicationId}`, {
+      fetch(`/api/v1/applications/${applicationId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getAuthHeader(),
         body: JSON.stringify(updatedApplication),
       })
         .then(response => response.json())
@@ -319,7 +339,9 @@ function Apps({ step, searchQuery, advancedSearchCriteria }) {
   
     try {
       // Fetch existing vendorIds from the users collection
-      const userResponse = await fetch('http://localhost:5000/api/v1/users/vendorIds');
+      const userResponse = await fetch('/api/v1/users/vendorIds', {
+        headers: getAuthHeader()
+      });
       if (!userResponse.ok) {
         throw new Error('Failed to fetch user vendorIds');
       }
@@ -327,7 +349,9 @@ function Apps({ step, searchQuery, advancedSearchCriteria }) {
       const existingUserVendorIds = userData.vendorIds || [];
   
       // Fetch the maximum vendorId number from applications
-      const appResponse = await fetch('http://localhost:5000/api/v1/applications/maxVendorId');
+      const appResponse = await fetch('/api/v1/applications/maxVendorId', {
+        headers: getAuthHeader()
+      });
       if (!appResponse.ok) {
         throw new Error('Failed to fetch max vendorId from applications');
       }
@@ -358,6 +382,25 @@ function Apps({ step, searchQuery, advancedSearchCriteria }) {
   };
 
   function DocumentViewer({ application }) {
+    const [documentErrors, setDocumentErrors] = useState({});
+    
+    // Function to handle document load errors
+    const handleDocumentError = (docType) => {
+      setDocumentErrors(prev => ({
+        ...prev,
+        [docType]: true
+      }));
+    };
+    
+    // Function to create the full document URL
+    const getDocumentUrl = (path) => {
+      // Make sure the URL starts with a slash
+      const baseUrl = process.env.NODE_ENV === 'production' 
+        ? '' 
+        : 'http://localhost:5000';
+      return `${baseUrl}/uploads/applications/${path}`;
+    };
+    
     return (
       <Box sx={{ mt: 2 }}>
         <Typography variant="h6">Documents</Typography>
@@ -365,39 +408,63 @@ function Apps({ step, searchQuery, advancedSearchCriteria }) {
         {application.w9Path && (
           <Box display="flex" alignItems="center" mb={1}>
             <Typography variant="subtitle2" sx={{ mr: 2 }}>W9 Form:</Typography>
-            <Link 
-              href={`http://localhost:5000/uploads/applications/${application.w9Path}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              View Document
-            </Link>
+            {documentErrors.w9 ? (
+              <Typography color="error">
+                Error loading document. File may be missing or inaccessible.
+              </Typography>
+            ) : (
+              <Link 
+                href={getDocumentUrl(application.w9Path)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => console.log('Opening W9 document:', getDocumentUrl(application.w9Path))}
+                onError={() => handleDocumentError('w9')}
+              >
+                View Document
+              </Link>
+            )}
           </Box>
         )}
   
         {application.backgroundCheckPath && (
           <Box display="flex" alignItems="center" mb={1}>
             <Typography variant="subtitle2" sx={{ mr: 2 }}>Background Check:</Typography>
-            <Link 
-              href={`http://localhost:5000/uploads/applications/${application.backgroundCheckPath}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              View Document
-            </Link>
+            {documentErrors.backgroundCheck ? (
+              <Typography color="error">
+                Error loading document. File may be missing or inaccessible.
+              </Typography>
+            ) : (
+              <Link 
+                href={getDocumentUrl(application.backgroundCheckPath)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => console.log('Opening Background Check document:', getDocumentUrl(application.backgroundCheckPath))}
+                onError={() => handleDocumentError('backgroundCheck')}
+              >
+                View Document
+              </Link>
+            )}
           </Box>
         )}
   
         {application.insurance?.coiPath && (
           <Box display="flex" alignItems="center" mb={1}>
             <Typography variant="subtitle2" sx={{ mr: 2 }}>Certificate of Insurance:</Typography>
-            <Link 
-              href={`http://localhost:5000/uploads/applications/${application.insurance.coiPath}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              View Document
-            </Link>
+            {documentErrors.coi ? (
+              <Typography color="error">
+                Error loading document. File may be missing or inaccessible.
+              </Typography>
+            ) : (
+              <Link 
+                href={getDocumentUrl(application.insurance.coiPath)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => console.log('Opening COI document:', getDocumentUrl(application.insurance.coiPath))}
+                onError={() => handleDocumentError('coi')}
+              >
+                View Document
+              </Link>
+            )}
           </Box>
         )}
       </Box>

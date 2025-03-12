@@ -27,7 +27,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-router.get('/applications', getApplications);
+router.get('/', getApplications);
 
 router.get('/maxVendorId', async (req, res) => {
   try {
@@ -39,7 +39,7 @@ router.get('/maxVendorId', async (req, res) => {
 });
 
 // PUT update application step
-router.put('/applications/:id', async (req, res) => {
+router.put('/:id', async (req, res) => {
   console.log('Request body:', req.body);
   try {
     const application = await Application.findByIdAndUpdate(
@@ -74,7 +74,7 @@ router.patch('/:id/step', async (req, res) => {
 });
 
 // Delete application
-router.delete('/applications/:id', async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const application = await Application.findByIdAndDelete(req.params.id);
     if (!application) {
@@ -138,7 +138,7 @@ router.post('/', upload.fields([
 
 // Route to handle application submissions with file uploads
 router.post(
-  '/applications',
+  '/',
   upload.fields([
     { name: 'w9', maxCount: 1 },
     { name: 'backgroundCheck', maxCount: 1 },

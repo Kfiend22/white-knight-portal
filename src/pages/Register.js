@@ -12,47 +12,79 @@ import {
   DialogContent,
   DialogActions,
 } from '@mui/material';
+import axios from 'axios';
 
 const Register = () => {
   const [formData, setFormData] = useState({
     vendorId: '',
     username: '',
     password: '',
+    confirmPassword: '',
     companyName: '',
-    contactEmail: '',
+    email: '', // Changed from contactEmail to match backend expectation
   });
   const [errors, setErrors] = useState({});
   const [vendorIdNotFoundError, setVendorIdNotFoundError] = useState('');
   const [isFormValid, setIsFormValid] = useState(false);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [submissionError, setSubmissionError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isValidatingVendorId, setIsValidatingVendorId] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     // Check if all fields are filled to enable the Register button
-    const { vendorId, username, password, companyName, contactEmail } = formData;
+    const { vendorId, username, password, confirmPassword, companyName, email } = formData;
     if (
       vendorId.trim() &&
       username.trim() &&
       password.trim() &&
+      confirmPassword.trim() &&
+      password === confirmPassword &&
       companyName.trim() &&
-      contactEmail.trim()
+      email.trim() &&
+      !vendorIdNotFoundError
     ) {
       setIsFormValid(true);
     } else {
       setIsFormValid(false);
     }
-  }, [formData]);
+  }, [formData, vendorIdNotFoundError]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prevData) => ({ ...prevData, [name]: value }));
+    
+    // Clear errors when user types
     setVendorIdNotFoundError('');
     setSubmissionError('');
+    
+    // If vendorId field is being changed and has a valid length, validate it
+    if (name === 'vendorId' && value.trim().length >= 8) {
+      validateVendorId(value);
+    }
+  };
+  
+  // Function to validate vendorId with the backend
+  const validateVendorId = async (vendorId) => {
+    if (!vendorId.trim()) return;
+    
+    setIsValidatingVendorId(true);
+    try {
+      const response = await axios.get(`/api/auth/validate-vendor-id/${vendorId}`);
+      if (!response.data.valid) {
+        setVendorIdNotFoundError('Vendor ID not found or already registered');
+      }
+    } catch (error) {
+      setVendorIdNotFoundError('Error validating Vendor ID');
+      console.error('Vendor ID validation error:', error);
+    } finally {
+      setIsValidatingVendorId(false);
+    }
   };
 
   const validateForm = () => {
-    const { vendorId, username, password, companyName, contactEmail } = formData;
+    const { vendorId, username, password, confirmPassword, companyName, email } = formData;
     const newErrors = {};
 
     if (!vendorId) {
@@ -66,13 +98,19 @@ const Register = () => {
     } else if (password.length < 6) {
       newErrors.password = 'Password must be at least 6 characters long.';
     }
+    
+    if (!confirmPassword) {
+      newErrors.confirmPassword = 'Please confirm your password.';
+    } else if (password !== confirmPassword) {
+      newErrors.confirmPassword = 'Passwords do not match.';
+    }
 
     if (!companyName) newErrors.companyName = 'Company Name is required.';
 
-    if (!contactEmail) {
-      newErrors.contactEmail = 'Contact Email is required.';
-    } else if (!/\S+@\S+\.\S+/.test(contactEmail)) {
-      newErrors.contactEmail = 'Invalid email address.';
+    if (!email) {
+      newErrors.email = 'Email is required.';
+    } else if (!/\S+@\S+\.\S+/.test(email)) {
+      newErrors.email = 'Invalid email address.';
     }
 
     return newErrors;
@@ -82,57 +120,62 @@ const Register = () => {
     e.preventDefault();
     const newErrors = validateForm();
     setErrors(newErrors);
-
-    if (Object.keys(newErrors).length === 0) {
+    
+    if (Object.keys(newErrors).length === 0 && !vendorIdNotFoundError) {
       setConfirmDialogOpen(true);
     }
   };
-
-  const handleConfirm = async () => {
-    setConfirmDialogOpen(false);
-    try {
-      const response = await fetch('/api/auth/register', {
-        method: 'PUT', // Changed to PUT since we're updating an existing user
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          vendorId: formData.vendorId,
-          username: formData.username,
-          password: formData.password, // Backend will handle hashing
-          companyName: formData.companyName,
-          email: formData.contactEmail
-        }),
-      });
-      const data = await response.json();
-  
-      if (response.ok) {
-        navigate('/login');
-      } else {
-        if (data.message === 'Vendor ID not found') {
-          setVendorIdNotFoundError('No matching vendor ID found in our records');
-        } else {
-          setSubmissionError(data.message || 'An error occurred during registration');
-        }
-      }
-    } catch (error) {
-      console.error('Registration error:', error);
-      setSubmissionError('An error occurred during registration');
-    }
-  };  
 
   const handleCancel = () => {
     setConfirmDialogOpen(false);
   };
 
+  const handleConfirm = async () => {
+    setConfirmDialogOpen(false);
+    setIsLoading(true);
+    
+    try {
+      // Create payload with correct field names for backend
+      const payload = {
+        vendorId: formData.vendorId,
+        username: formData.username,
+        password: formData.password,
+        companyName: formData.companyName,
+        email: formData.email // Using email instead of contactEmail
+      };
+      
+      const response = await axios.post('/api/auth/register', payload);
+      // On successful registration, navigate to login with success message
+      navigate('/login', { 
+        state: { 
+          message: 'Registration successful! Please log in with your new credentials.',
+          type: 'success' 
+        } 
+      });
+    } catch (error) {
+      if (error.response) {
+        // Server responded with an error
+        setSubmissionError(error.response.data.message || 'Registration failed');
+      } else if (error.request) {
+        // Request was made but no response received
+        setSubmissionError('Network error. Please check your connection and try again.');
+      } else {
+        // Something else happened while setting up the request
+        setSubmissionError('An unexpected error occurred. Please try again.');
+      }
+      console.error('Registration failed:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <Container maxWidth="sm">
-      <Box mt={8}>
-        <Typography variant="h4" align="center">
-          White Knight Roadside Motor Club
+      <Box mt={4}>
+        <Typography variant="h4" align="center" gutterBottom>
+          Register
         </Typography>
-        <Typography variant="h6" align="center" gutterBottom>
-          Provider Registration
-        </Typography>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <TextField
             fullWidth
             label="Vendor ID"
@@ -141,8 +184,8 @@ const Register = () => {
             variant="outlined"
             value={formData.vendorId}
             onChange={handleChange}
-            error={Boolean(errors.vendorId) || Boolean(vendorIdNotFoundError)}
-            helperText={errors.vendorId || vendorIdNotFoundError}
+            error={Boolean(errors.vendorId)}
+            helperText={errors.vendorId}
             required
           />
           <TextField
@@ -160,14 +203,27 @@ const Register = () => {
           <TextField
             fullWidth
             label="Password"
-            type="password"
             name="password"
+            type="password"
             margin="normal"
             variant="outlined"
             value={formData.password}
             onChange={handleChange}
             error={Boolean(errors.password)}
             helperText={errors.password}
+            required
+          />
+          <TextField
+            fullWidth
+            label="Confirm Password"
+            name="confirmPassword"
+            type="password"
+            margin="normal"
+            variant="outlined"
+            value={formData.confirmPassword}
+            onChange={handleChange}
+            error={Boolean(errors.confirmPassword)}
+            helperText={errors.confirmPassword}
             required
           />
           <TextField
@@ -184,18 +240,24 @@ const Register = () => {
           />
           <TextField
             fullWidth
-            label="Contact Email"
-            name="contactEmail"
+            label="Email"
+            name="email"
             margin="normal"
             variant="outlined"
-            value={formData.contactEmail}
+            value={formData.email}
             onChange={handleChange}
-            error={Boolean(errors.contactEmail)}
-            helperText={errors.contactEmail}
+            error={Boolean(errors.email)}
+            helperText={errors.email}
             required
           />
+          {vendorIdNotFoundError && (
+            <Typography color="error" variant="body2" sx={{ mt: 1 }}>
+              {vendorIdNotFoundError}
+            </Typography>
+          )}
+          
           {submissionError && (
-            <Typography color="error" variant="body2">
+            <Typography color="error" variant="body2" sx={{ mt: 1 }}>
               {submissionError}
             </Typography>
           )}
@@ -205,9 +267,9 @@ const Register = () => {
             color="primary"
             type="submit"
             sx={{ mt: 2 }}
-            disabled={!isFormValid}
+            disabled={!isFormValid || isLoading || isValidatingVendorId}
           >
-            Register
+            {isLoading ? 'Registering...' : 'Register'}
           </Button>
         </form>
       </Box>
@@ -221,9 +283,13 @@ const Register = () => {
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCancel}>Cancel</Button>
-          <Button onClick={handleConfirm} color="primary">
-            Confirm
+          <Button onClick={handleCancel} disabled={isLoading}>Cancel</Button>
+          <Button 
+            onClick={handleConfirm} 
+            color="primary"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Processing...' : 'Confirm'}
           </Button>
         </DialogActions>
       </Dialog>

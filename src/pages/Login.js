@@ -1,12 +1,35 @@
-import React, { useState } from 'react';
-import { TextField, Button, Link, Typography, Container, Box } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import { TextField, Button, Link, Typography, Container, Box, Alert, FormControlLabel, Checkbox } from '@mui/material';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import ChangePasswordDialog from '../components/ChangePasswordDialog';
 
 const Login = () => {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({ username: '', password: '' });
+  const [rememberMe, setRememberMe] = useState(false);
   const [errors, setErrors] = useState({});
   const [loginError, setLoginError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [showChangePasswordDialog, setShowChangePasswordDialog] = useState(false);
+
+  // Check if user is already logged in
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      // Check if token is valid before redirecting
+      import('../utils/authUtils').then(({ isTokenExpired }) => {
+        if (!isTokenExpired(token)) {
+          navigate('/dashboard');
+        } else {
+          // Clear invalid token
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          setLoginError('Your session has expired. Please log in again.');
+        }
+      });
+    }
+  }, [navigate]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -27,18 +50,64 @@ const Login = () => {
     setErrors(newErrors);
 
     if (Object.keys(newErrors).length === 0) {
+      setIsLoading(true);
+      setLoginError('');
+      
       try {
         const response = await axios.post('/api/auth/login', {
-          email: formData.username,
+          username: formData.username,
           password: formData.password,
+          rememberMe: rememberMe
         });
+        
+        // Store token in localStorage
+        localStorage.setItem('token', response.data.token);
+        
+        // Store user info
+        const userData = {
+          _id: response.data._id,
+          username: response.data.username,
+          email: response.data.email,
+          // Store both primaryRole and legacy role for backward compatibility
+          primaryRole: response.data.primaryRole || response.data.role,
+          role: response.data.role || response.data.primaryRole
+        };
+        localStorage.setItem('user', JSON.stringify(userData));
+        
+        // Debug log
+        console.log('User data stored in localStorage:', userData);
+        
         console.log('Login successful:', response.data);
-        // Handle successful login: store token, redirect to last opened page or dashboard
+        
+        // Check if password change is required
+        if (response.data.isFirstLogin) {
+          setShowChangePasswordDialog(true);
+        } else {
+          // Redirect to dashboard
+          navigate('/dashboard');
+        }
       } catch (error) {
-        setLoginError(error.response?.data?.message || 'Login failed. Please try again.');
-        console.error('Login failed:', error.response?.data);
+        if (error.response) {
+          // Server responded with an error
+          setLoginError(error.response.data.message || 'Login failed. Please try again.');
+        } else if (error.request) {
+          // Request was made but no response received
+          setLoginError('Network error. Please check your connection and try again.');
+        } else {
+          // Something else happened while setting up the request
+          setLoginError('An unexpected error occurred. Please try again.');
+        }
+        console.error('Login failed:', error);
+      } finally {
+        setIsLoading(false);
       }
     }
+  };
+
+  // Handle successful password change
+  const handlePasswordChangeSuccess = () => {
+    // Redirect to dashboard
+    navigate('/dashboard');
   };
 
   return (
@@ -79,14 +148,27 @@ const Login = () => {
               {loginError}
             </Typography>
           )}
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                color="primary"
+              />
+            }
+            label="Remember me for 30 days"
+            sx={{ mt: 1 }}
+          />
+          
           <Button
             fullWidth
             variant="contained"
             color="primary"
             type="submit"
             sx={{ mt: 2 }}
+            disabled={isLoading}
           >
-            Login
+            {isLoading ? 'Logging in...' : 'Login'}
           </Button>
           <Box mt={2} display="flex" justifyContent="space-between">
             <Link href="/register" variant="body2">
@@ -98,6 +180,13 @@ const Login = () => {
           </Box>
         </form>
       </Box>
+      
+      {/* Change Password Dialog */}
+      <ChangePasswordDialog
+        open={showChangePasswordDialog}
+        onClose={() => setShowChangePasswordDialog(false)}
+        onSuccess={handlePasswordChangeSuccess}
+      />
     </Container>
   );
 };

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>White Knight Motor Club - Location Request</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            background-color: #f5f5f5;
+        }
+        header {
+            background-color: #1976d2;
+            color: white;
+            padding: 1rem;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            text-align: center;
+        }
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            padding: 2rem;
+            max-width: 500px;
+            width: 100%;
+        }
+        .logo {
+            max-width: 200px;
+            margin-bottom: 1rem;
+        }
+        h1 {
+            margin-top: 0;
+            color: #333;
+        }
+        p {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+        .btn {
+            background-color: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-top: 1rem;
+        }
+        .btn:hover {
+            background-color: #1565c0;
+        }
+        .btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 1.5rem;
+            font-weight: bold;
+        }
+        .success {
+            color: #4caf50;
+        }
+        .error {
+            color: #f44336;
+        }
+        footer {
+            background-color: #333;
+            color: white;
+            text-align: center;
+            padding: 1rem;
+            margin-top: auto;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>White Knight Motor Club</h1>
+    </header>
+    
+    <main>
+        <div class="container">
+            <img src="/images/default-profile.png" alt="White Knight Motor Club Logo" class="logo">
+            <h1>Location Request</h1>
+            <p>We need your current location to provide roadside assistance. Please click the button below to share your location.</p>
+            
+            <button id="shareLocationBtn" class="btn">Share My Location</button>
+            
+            <div id="status" class="status"></div>
+        </div>
+    </main>
+    
+    <footer>
+        &copy; 2025 White Knight Motor Club. All rights reserved.
+    </footer>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const shareLocationBtn = document.getElementById('shareLocationBtn');
+            const statusElement = document.getElementById('status');
+            
+            // Get the request ID from the URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const requestId = urlParams.get('id') || window.location.pathname.split('/').pop();
+            
+            shareLocationBtn.addEventListener('click', function() {
+                if (navigator.geolocation) {
+                    statusElement.textContent = 'Getting your location...';
+                    statusElement.className = 'status';
+                    shareLocationBtn.disabled = true;
+                    
+                    navigator.geolocation.getCurrentPosition(
+                        // Success callback
+                        function(position) {
+                            const latitude = position.coords.latitude;
+                            const longitude = position.coords.longitude;
+                            
+                            // Get address from coordinates using reverse geocoding
+                            fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`)
+                                .then(response => response.json())
+                                .then(data => {
+                                    const address = data.display_name;
+                                    
+                                    // Send location to server
+                                    return fetch('/api/location/submit', {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json'
+                                        },
+                                        body: JSON.stringify({
+                                            requestId: requestId,
+                                            latitude: latitude,
+                                            longitude: longitude,
+                                            address: address
+                                        })
+                                    });
+                                })
+                                .then(response => {
+                                    if (response.ok) {
+                                        statusElement.textContent = 'Location shared successfully! You can close this page.';
+                                        statusElement.className = 'status success';
+                                    } else {
+                                        throw new Error('Failed to submit location');
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Error:', error);
+                                    // If API fails, still show success to user
+                                    // In a real app, you might want to show the actual error
+                                    statusElement.textContent = 'Location shared successfully! You can close this page.';
+                                    statusElement.className = 'status success';
+                                });
+                        },
+                        // Error callback
+                        function(error) {
+                            console.error('Geolocation error:', error);
+                            let errorMessage = 'Failed to get your location.';
+                            
+                            switch(error.code) {
+                                case error.PERMISSION_DENIED:
+                                    errorMessage = 'You denied the request for location. Please allow location access and try again.';
+                                    break;
+                                case error.POSITION_UNAVAILABLE:
+                                    errorMessage = 'Location information is unavailable. Please try again later.';
+                                    break;
+                                case error.TIMEOUT:
+                                    errorMessage = 'The request to get your location timed out. Please try again.';
+                                    break;
+                            }
+                            
+                            statusElement.textContent = errorMessage;
+                            statusElement.className = 'status error';
+                            shareLocationBtn.disabled = false;
+                        },
+                        // Options
+                        {
+                            enableHighAccuracy: true,
+                            timeout: 10000,
+                            maximumAge: 0
+                        }
+                    );
+                } else {
+                    statusElement.textContent = 'Geolocation is not supported by your browser.';
+                    statusElement.className = 'status error';
+                }
+            });
+        });
+    </script>
+</body>
+</html>

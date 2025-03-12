@@ -37,7 +37,7 @@ const ApplicationFormPage = () => {
   };
 
   return (
-    <Container maxWidth="lg">
+    <Container maxWidth={false}>
       {/* Header with Logo */}
       <Header />
 

@@ -25,9 +25,18 @@ function Settings() {
     fetchSettings();
   }, []);
 
+  // Helper function to get auth headers
+  const getAuthHeader = () => {
+    const token = localStorage.getItem('token');
+    return { Authorization: `Bearer ${token}` };
+  };
+
   const fetchSettings = async () => {
     try {
-      const response = await axios.get('/api/settings');
+      const response = await axios.get('/api/settings', {
+        headers: getAuthHeader()
+      });
+      
       const { locations, selectedLocation, sites, vehicles, users } = response.data;
 
       // Populate the state with data from the backend
@@ -38,15 +47,33 @@ function Settings() {
       setUsers(users || []);
     } catch (error) {
       console.error('Error fetching settings:', error);
+      
+      // If unauthorized, redirect to login
+      if (error.response && error.response.status === 401) {
+        window.location.href = '/login';
+      }
     }
   };
 
   const updateSettings = async (updatedSettings) => {
     try {
-      await axios.put('/api/settings', updatedSettings);
-      fetchSettings(); // Refresh settings after update
+      await axios.put('/api/settings', updatedSettings, {
+        headers: getAuthHeader()
+      });
+      
+      // Refresh settings after update
+      fetchSettings();
+      
+      return true; // Return success status
     } catch (error) {
       console.error('Error updating settings:', error);
+      
+      // If unauthorized, redirect to login
+      if (error.response && error.response.status === 401) {
+        window.location.href = '/login';
+      }
+      
+      return false; // Return failure status
     }
   };
 
@@ -61,7 +88,7 @@ function Settings() {
       <SideMenu />
 
       {/* Main Content */}
-      <Container maxWidth="lg">
+      <Container maxWidth={false}>
         <Box
           mt={4}
           mb={2}

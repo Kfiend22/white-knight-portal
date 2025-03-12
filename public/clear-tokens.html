@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clear Authentication Tokens</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            background-color: #f9f9f9;
+        }
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 10px 0;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .alert {
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+            display: none;
+        }
+        .success {
+            background-color: #dff0d8;
+            color: #3c763d;
+            border: 1px solid #d6e9c6;
+        }
+        .error {
+            background-color: #f2dede;
+            color: #a94442;
+            border: 1px solid #ebccd1;
+        }
+    </style>
+</head>
+<body>
+    <h1>White Knight Portal - Clear Authentication Tokens</h1>
+    
+    <div class="container">
+        <h2>Authentication Loop Fix</h2>
+        <p>If you're experiencing authentication issues or login loops, this utility will clear your stored tokens and redirect you to the login page.</p>
+        
+        <div id="successAlert" class="alert success">
+            Tokens cleared successfully! You will be redirected to the login page in 3 seconds...
+        </div>
+        
+        <div id="errorAlert" class="alert error">
+            An error occurred while clearing tokens. Please try again or clear them manually using browser developer tools.
+        </div>
+        
+        <button id="clearButton">Clear Authentication Tokens</button>
+    </div>
+    
+    <div class="container">
+        <h2>Manual Instructions</h2>
+        <p>If the button above doesn't work, you can clear the tokens manually:</p>
+        <ol>
+            <li>Open browser developer tools (F12 or right-click → Inspect)</li>
+            <li>Go to Application tab → Storage → Local Storage</li>
+            <li>Delete the 'token' and 'user' entries</li>
+            <li>Refresh the application page</li>
+        </ol>
+    </div>
+
+    <script>
+        document.getElementById('clearButton').addEventListener('click', function() {
+            try {
+                // Clear the authentication tokens
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                
+                // Show success message
+                document.getElementById('successAlert').style.display = 'block';
+                
+                // Redirect to login page after 3 seconds
+                setTimeout(function() {
+                    window.location.href = '/login';
+                }, 3000);
+            } catch (error) {
+                // Show error message
+                document.getElementById('errorAlert').style.display = 'block';
+                console.error('Error clearing tokens:', error);
+            }
+        });
+    </script>
+</body>
+</html>
