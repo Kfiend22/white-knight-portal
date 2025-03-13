@@ -33,6 +33,95 @@ import {
   ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
 
+// Helper function to determine if a user is a dispatch user
+const isDispatchUser = (user) => {
+  return user?.primaryRole === 'OW' || user?.primaryRole === 'sOW' || user?.primaryRole === 'RM';
+};
+
+// Helper function to determine if a user can reactivate completed jobs
+const canReactivateJob = (user) => {
+  if (!user) return false;
+  
+  // Check primary role (OW, sOW, RM)
+  const hasPrimaryRole = user.primaryRole === 'OW' || user.primaryRole === 'sOW' || user.primaryRole === 'RM';
+  
+  // Check secondary roles (dispatcher, answeringService)
+  const hasSecondaryRole = user.secondaryRoles?.dispatcher || user.secondaryRoles?.answeringService;
+  
+  // Log for debugging
+  console.log('canReactivateJob check:', { 
+    user, 
+    hasPrimaryRole, 
+    hasSecondaryRole, 
+    result: hasPrimaryRole || hasSecondaryRole 
+  });
+  
+  return hasPrimaryRole || hasSecondaryRole;
+};
+
+// Helper function to determine status priority
+const getStatusPriority = (status) => {
+  const priorityMap = {
+    'Pending': 1,
+    'Scheduled': 2,
+    'Pending Acceptance': 3,
+    'Dispatched': 4,
+    'En Route': 5,
+    'On Site': 6,
+    'Completed': 7,
+    'GOA': 8, // GOA and Expired are outside the normal flow
+    'Expired': 9
+  };
+  return priorityMap[status] || 0; // Default to 0 for unknown statuses
+};
+
+// Helper function to determine job status color
+const getJobStatusColor = (status) => {
+  if (!status) return 'transparent';
+  
+  switch (status) {
+    // Orange for Dispatched and Awaiting Approval
+    case 'Dispatched':
+    case 'Awaiting Approval':
+      return 'rgba(255, 165, 0, 0.2)'; // Orange with transparency
+    
+    // Light green for En Route
+    case 'En Route':
+      return 'rgba(144, 238, 144, 0.3)'; // Light green with transparency
+    
+    // Blue for On Site/On Scene
+    case 'On Site':
+    case 'On Scene':
+      return 'rgba(0, 0, 255, 0.15)'; // Blue with transparency
+    
+    // Forest green for Completed
+    case 'Completed':
+      return 'rgba(34, 139, 34, 0.2)'; // Forest green with transparency
+    
+    // Yellow for GOA
+    case 'GOA':
+      return 'rgba(255, 255, 0, 0.2)'; // Yellow with transparency
+    
+    // Pink for Expired
+    case 'Expired':
+      return 'rgba(255, 192, 203, 0.3)'; // Pink with transparency
+    
+    // Handle other statuses
+    case 'Pending':
+    case 'Scheduled':
+    case 'Pending Acceptance':
+    case 'In-Progress':
+    case 'Rejected':
+    case 'Accepted':
+    case 'Canceled':
+      return 'transparent'; // No specific color for these statuses
+    
+    default:
+      console.log('Unknown status:', status);
+      return 'transparent';
+  }
+};
+
 const CountdownTimer = ({ targetTime }) => {
   const [remaining, setRemaining] = useState(Math.max(0, targetTime - Date.now()));
 
@@ -433,18 +522,20 @@ function Jobs({ jobCategory, onCreateJob, onReceiveDemoJob, onEditJob, refreshTr
     
     try {
       // Update job status on the server with rejection reason
-      await axios.put(`/api/jobs/${jobId}/reject`, {
+      // Change status back to 'Pending'
+      await axios.put(`/api/jobs/${jobId}`, { 
+        status: 'Pending',
         rejectionReason
       }, {
         headers: authHeader()
       });
-      
+
       // Close dialog and refresh jobs
       setRejectDialogOpen(false);
       setRejectionReason('');
       setJobToReject(null);
       fetchJobs();
-      
+
     } catch (error) {
       console.error('Error rejecting job:', error);
       alert('Failed to reject job. Please try again.');
@@ -495,18 +586,43 @@ function Jobs({ jobCategory, onCreateJob, onReceiveDemoJob, onEditJob, refreshTr
     setLoading(true);
     
     try {
-      console.log('Assigning driver to job:', {
-        jobId: selectedJob.id,
+      // Check if this is a redispatch (job already has assignedAt and/or firstAssignedAt)
+      const isRedispatch = selectedJob.assignedAt || selectedJob.firstAssignedAt;
+      
+      // Prepare request data
+      const requestData = {
         driverId: selectedDriver.id,
-        driverName: selectedDriver.name,
         truck: selectedTruck
-      });
+      };
+      
+      // If this is a redispatch, preserve the original assignedAt time
+      // by explicitly sending it back to the server
+      if (isRedispatch) {
+        // If firstAssignedAt exists, use that (it's the very first assignment time)
+        // Otherwise use the current assignedAt value
+        requestData.preserveAssignedAt = true;
+        requestData.originalAssignedAt = selectedJob.firstAssignedAt || selectedJob.assignedAt;
+        
+        console.log('Redispatching job - preserving original assignment time:', {
+          jobId: selectedJob.id,
+          driverId: selectedDriver.id,
+          driverName: selectedDriver.name,
+          truck: selectedTruck,
+          originalAssignedAt: requestData.originalAssignedAt,
+          isRedispatch
+        });
+      } else {
+        console.log('First-time dispatch for job:', {
+          jobId: selectedJob.id,
+          driverId: selectedDriver.id,
+          driverName: selectedDriver.name,
+          truck: selectedTruck,
+          isRedispatch
+        });
+      }
       
       // Update job on the server
-      const response = await axios.put(`/api/jobs/${selectedJob.id}/assign`, {
-        driverId: selectedDriver.id,
-        truck: selectedTruck
-      }, {
+      const response = await axios.put(`/api/jobs/${selectedJob.id}/assign`, requestData, {
         headers: authHeader()
       });
       
@@ -532,23 +648,72 @@ function Jobs({ jobCategory, onCreateJob, onReceiveDemoJob, onEditJob, refreshTr
   const handleJobStatusChange = async (jobId, status) => {
     console.log('handleJobStatusChange called with:', { jobId, status });
     setLoading(true);
-    
+
     try {
-      // Update job status on the server - using the correct endpoint
-      await axios.put(`/api/jobs/${jobId}`, {
+      // Get the current job details
+      const currentJob = jobs.find(job => job.id === jobId);
+      if (!currentJob) {
+        console.error('Job not found for status change');
+        alert('Failed to update job status. Job not found.');
+        setLoading(false); // Ensure loading is set to false even if job is not found
+        return;
+      }
+      const oldStatus = currentJob.status;
+      
+      console.log('Current job details:', { 
+        id: currentJob.id, 
+        oldStatus, 
+        newStatus: status,
+        jobCategory,
+        canUserReactivate: canReactivateJob(currentUser)
+      });
+
+      // Check for user role restrictions ONLY for 'N/A' users who are not Dispatchers or Answering Service
+      if (currentUser?.primaryRole === 'N/A' && 
+          !(currentUser?.secondaryRoles?.dispatcher || currentUser?.secondaryRoles?.answeringService)) {
+        if (getStatusPriority(status) < getStatusPriority(oldStatus)) {
+          alert('Drivers with role N/A cannot lower the job status.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Check if this is a previously rejected job being dispatched
+      if (oldStatus === 'Pending' && currentJob.rejectionReason && status === 'Dispatched') {
+        console.log('Detected rejected job being dispatched, opening dispatch dialog');
+        // Open dispatch dialog to assign a new driver
+        handleDispatchJob(currentJob);
+        return; // Exit early to avoid double updates
+      }
+
+      console.log('Updating job status on server:', { jobId, status });
+      
+      // If we reach here, either the user is NOT 'N/A', or they are 'N/A'
+      // and have passed the restriction checks. So, update the status.
+      const response = await axios.put(`/api/jobs/${jobId}`, {
         status
       }, {
         headers: authHeader()
       });
       
+      console.log('Server response after status update:', response.data);
+
       // Update local state
       let updatedJobs = jobs.map((job) =>
         job.id === jobId ? { ...job, status } : job
       );
-      
+
       setJobs(updatedJobs);
+      console.log('Local state updated with new status');
+
+      // Re-prompt for driver if status changed back to Dispatched from a higher status
+      if (status === 'Dispatched' && getStatusPriority(oldStatus) > getStatusPriority('Dispatched')) {
+        console.log('Status changed to Dispatched from higher status, opening dispatch dialog');
+        handleDispatchJob(currentJob); // Re-open dispatch dialog
+      }
     } catch (error) {
       console.error('Error updating job status:', error);
+      console.error('Error details:', error.response?.data || error.message);
       alert('Failed to update job status. Please try again.');
     } finally {
       setLoading(false);
@@ -699,9 +864,14 @@ function Jobs({ jobCategory, onCreateJob, onReceiveDemoJob, onEditJob, refreshTr
     
     switch (action) {
       case 'cancel':
-        // Store the job in a dedicated state variable for cancellation
-        setJobToCancel(targetJob);
-        setCancelDialogOpen(true);
+        // Only allow canceling if the job is NOT completed
+        if (targetJob.status !== 'Completed') {
+          // Store the job in a dedicated state variable for cancellation
+          setJobToCancel(targetJob);
+          setCancelDialogOpen(true);
+        } else {
+          alert('Completed jobs cannot be canceled.');
+        }
         break;
       case 'goa':
         // Store the job in a dedicated state variable for GOA
@@ -719,6 +889,10 @@ function Jobs({ jobCategory, onCreateJob, onReceiveDemoJob, onEditJob, refreshTr
       case 'duplicate':
         // Implement duplicate job logic
         alert('Duplicate Job feature coming soon');
+        break;
+      case 'reassign':
+        // Use the existing dispatch dialog to reassign the driver
+        handleDispatchJob(targetJob);
         break;
       default:
         break;
@@ -796,7 +970,7 @@ function Jobs({ jobCategory, onCreateJob, onReceiveDemoJob, onEditJob, refreshTr
   const calculateTargetTime = (job) => {
     if (!job.eta) return null;
     
-    // If ETA is a number (minutes), calculate target time from job creation or acceptance
+    // If ETA is a number (minutes), calculate target time from creation or acceptance
     if (!isNaN(parseInt(job.eta))) {
       // Convert ETA minutes to milliseconds
       const etaMilliseconds = parseInt(job.eta) * 60 * 1000;
@@ -806,13 +980,22 @@ function Jobs({ jobCategory, onCreateJob, onReceiveDemoJob, onEditJob, refreshTr
         return new Date(job.acceptedAt).getTime() + etaMilliseconds;
       }
       
-      // If job was assigned at a specific time, use that
+      // For assigned jobs, prioritize firstAssignedAt (original assignment time) if available
+      // This ensures the ETA timer doesn't restart when a job is redispatched
+      if (job.firstAssignedAt) {
+        console.log(`Using firstAssignedAt for ETA calculation: ${job.firstAssignedAt}`);
+        return new Date(job.firstAssignedAt).getTime() + etaMilliseconds;
+      }
+      
+      // If no firstAssignedAt, fall back to assignedAt
       if (job.assignedAt) {
+        console.log(`Using assignedAt for ETA calculation: ${job.assignedAt}`);
         return new Date(job.assignedAt).getTime() + etaMilliseconds;
       }
       
       // Otherwise fall back to job.createdAt or current time
       const baseTime = job.createdAt ? new Date(job.createdAt).getTime() : Date.now();
+      console.log(`Using createdAt for ETA calculation: ${job.createdAt || 'current time'}`);
       return baseTime + etaMilliseconds;
     }
     
@@ -847,9 +1030,13 @@ function Jobs({ jobCategory, onCreateJob, onReceiveDemoJob, onEditJob, refreshTr
       return isPending || isPendingAcceptance;
     });
   } else if (jobCategory === 'inProgress') {
-    displayedJobs = jobs.filter((job) => 
-      ['In-Progress', 'Dispatched', 'En Route', 'On Site', 'Awaiting Approval', 'Rejected', 'Accepted'].includes(job.status)
-    );
+    displayedJobs = isDispatchUser(currentUser)
+      ? jobs.filter((job) => 
+          ['In-Progress', 'Dispatched', 'En Route', 'On Site', 'Awaiting Approval', 'Rejected', 'Accepted', 'Completed', 'Pending', 'Scheduled', 'Pending Acceptance'].includes(job.status)
+        )
+      : jobs.filter((job) => 
+          ['In-Progress', 'Dispatched', 'En Route', 'On Site', 'Awaiting Approval', 'Rejected', 'Accepted'].includes(job.status)
+        );
   } else if (jobCategory === 'scheduled') {
     displayedJobs = jobs.filter((job) => job.status === 'Scheduled');
   } else if (jobCategory === 'completed') {
@@ -892,7 +1079,7 @@ function Jobs({ jobCategory, onCreateJob, onReceiveDemoJob, onEditJob, refreshTr
             <TableBody>
               {displayedJobs.map((job) => (
                 <React.Fragment key={job.id}>
-                  <TableRow>
+                  <TableRow sx={{ backgroundColor: getJobStatusColor(job.status) }}>
                     <TableCell>{job.po || job.id}</TableCell>
                     <TableCell>{job.created}</TableCell>
                     <TableCell>
@@ -1000,20 +1187,26 @@ function Jobs({ jobCategory, onCreateJob, onReceiveDemoJob, onEditJob, refreshTr
                             GOA request pending approval
                           </Typography>
                         </Box>
-                      ) : job.status === 'Rejected' ? (
-                        <Box>
-                          <Typography variant="body2" color="error.main">
-                            {job.status}
-                          </Typography>
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            size="small"
-                            onClick={() => handleMenuAction('cancel', job)}
+                      ) : jobCategory === 'completed' && canReactivateJob(currentUser) ? (
+                        <FormControl fullWidth>
+                          <InputLabel id={`status-select-label-${job.id}`}>Status</InputLabel>
+                          <Select
+                            labelId={`status-select-label-${job.id}`}
+                            label="Status"
+                            value={job.status}
+                            onChange={(e) =>
+                              handleJobStatusChange(job.id, e.target.value)
+                            }
                           >
-                            Cancel Job
-                          </Button>
-                        </Box>
+                            <MenuItem value="Pending">Pending</MenuItem>
+                            <MenuItem value="Scheduled">Scheduled</MenuItem>
+                            <MenuItem value="Pending Acceptance">Pending Acceptance</MenuItem>
+                            <MenuItem value="Dispatched">Dispatched</MenuItem>
+                            <MenuItem value="En Route">En Route</MenuItem>
+                            <MenuItem value="On Site">On Site</MenuItem>
+                            <MenuItem value="Completed">Completed</MenuItem>
+                          </Select>
+                        </FormControl>
                       ) : jobCategory === 'inProgress' ? (
                         <FormControl fullWidth>
                           <InputLabel id={`status-select-label-${job.id}`}>Status</InputLabel>
@@ -1025,18 +1218,44 @@ function Jobs({ jobCategory, onCreateJob, onReceiveDemoJob, onEditJob, refreshTr
                               handleJobStatusChange(job.id, e.target.value)
                             }
                           >
-                            {/* Simplified dropdown with all possible status options */}
-                            <MenuItem value="Dispatched">Dispatched</MenuItem>
+                            {/* Include all possible status values to avoid MUI error */}
+                            <MenuItem value="Pending" disabled={!isDispatchUser(currentUser)}>Pending</MenuItem>
+                            <MenuItem value="Scheduled" disabled={!isDispatchUser(currentUser)}>Scheduled</MenuItem>
+                            <MenuItem value="Pending Acceptance" disabled={!isDispatchUser(currentUser)}>Pending Acceptance</MenuItem>
+                            <MenuItem value="Dispatched" disabled={currentUser?.primaryRole === 'N/A' && !(currentUser?.secondaryRoles?.dispatcher || currentUser?.secondaryRoles?.answeringService)}>Dispatched</MenuItem>
                             <MenuItem value="En Route">En Route</MenuItem>
                             <MenuItem value="On Site">On Site</MenuItem>
                             <MenuItem value="Completed">Completed</MenuItem>
-                            <MenuItem value="Awaiting Approval">Awaiting Approval</MenuItem>
-                            <MenuItem value="Rejected">Rejected</MenuItem>
-                            <MenuItem value="Accepted">Accepted</MenuItem>
+                            <MenuItem value="Awaiting Approval" disabled={!isDispatchUser(currentUser)}>Awaiting Approval</MenuItem>
+                            <MenuItem value="Rejected" disabled={true}>Rejected</MenuItem>
+                            <MenuItem value="Accepted" disabled={!isDispatchUser(currentUser)}>Accepted</MenuItem>
+                            <MenuItem value="Canceled" disabled={!isDispatchUser(currentUser)}>Canceled</MenuItem>
+                            <MenuItem value="In-Progress" disabled={!isDispatchUser(currentUser)}>In-Progress</MenuItem>
                           </Select>
                         </FormControl>
                       ) : (
-                        job.status
+                        // Show "Rejected" if status is Pending and there's a rejection reason
+                        job.status === 'Pending' && job.rejectionReason ? (
+                          <Box>
+                            <Typography variant="body2" color="error.main">
+                              Rejected
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Reason: {job.rejectionReason}
+                            </Typography>
+                            <Button
+                              variant="contained"
+                              color="primary"
+                              size="small"
+                              sx={{ mt: 1 }}
+                              onClick={() => handleDispatchJob(job)}
+                            >
+                              Dispatch
+                            </Button>
+                          </Box>
+                        ) : (
+                          job.status
+                        )
                       )}
                     </TableCell>
                     <TableCell>
@@ -1045,7 +1264,8 @@ function Jobs({ jobCategory, onCreateJob, onReceiveDemoJob, onEditJob, refreshTr
                           <Typography variant="caption" color="text.secondary">
                             {job.eta}
                           </Typography>
-                          {calculateTargetTime(job) && (
+                          {/* Only show timer if NOT completed */}
+                          {job.status !== 'Completed' && calculateTargetTime(job) && (
                             <CountdownTimer targetTime={calculateTargetTime(job)} />
                           )}
                         </Box>
@@ -1066,7 +1286,7 @@ function Jobs({ jobCategory, onCreateJob, onReceiveDemoJob, onEditJob, refreshTr
                     </TableCell>
                   </TableRow>
                   {/* Expanded Row */}
-                  <TableRow>
+                  <TableRow sx={{ backgroundColor: getJobStatusColor(job.status) }}>
                     <TableCell
                       style={{ paddingBottom: 0, paddingTop: 0 }}
                       colSpan={10}
@@ -1374,6 +1594,9 @@ function Jobs({ jobCategory, onCreateJob, onReceiveDemoJob, onEditJob, refreshTr
             <MenuItem onClick={() => handleMenuAction('cancel')}>Cancel Job</MenuItem>
             <MenuItem onClick={() => handleMenuAction('goa')}>Mark as GOA</MenuItem>
             <MenuItem onClick={() => handleMenuAction('unsuccessful')}>Report Unsuccessful</MenuItem>
+            {isDispatchUser(currentUser) && (
+              <MenuItem onClick={() => handleMenuAction('reassign')}>Reassign Driver</MenuItem>
+            )}
           </Menu>
         </>
       ) : (

@@ -828,12 +828,14 @@ const getUnsubmittedJobs = async (req, res) => {
 // Assign a driver or SP to a job (from dispatcher side)
 const assignDriverToJob = async (req, res) => {
   try {
-    const { driverId, truck } = req.body;
+    const { driverId, truck, preserveAssignedAt, originalAssignedAt } = req.body;
     
     console.log('assignDriverToJob called with params:', {
       jobId: req.params.id,
       driverId,
       truck,
+      preserveAssignedAt,
+      originalAssignedAt,
       requestUser: req.user.id
     });
     
@@ -852,7 +854,9 @@ const assignDriverToJob = async (req, res) => {
       id: job._id,
       status: job.status,
       currentDriver: job.driverId,
-      needsAcceptance: job.needsAcceptance
+      needsAcceptance: job.needsAcceptance,
+      assignedAt: job.assignedAt,
+      firstAssignedAt: job.firstAssignedAt
     });
     
     // Fetch driver/SP information
@@ -889,12 +893,41 @@ const assignDriverToJob = async (req, res) => {
       return res.status(400).json({ message: 'User must be either an SP or have a driver secondary role' });
     }
     
+    // Check if this is a redispatch (job already has a driver)
+    const isRedispatch = job.driverId && job.driverId.toString() !== driverId;
+    
     // Update job with driver/SP information
     job.driverId = driverId;
     job.driver = `${user.firstName} ${user.lastName}`;
     job.status = 'Pending Acceptance'; // Change status to pending acceptance
     job.needsAcceptance = true; // Explicitly set needsAcceptance flag
-    job.assignedAt = new Date();
+    
+    // Handle assignedAt field based on whether this is a redispatch
+    if (isRedispatch) {
+      // If this is a redispatch and we want to preserve the original assignment time
+      if (preserveAssignedAt && originalAssignedAt) {
+        console.log(`Preserving original assignment time for redispatched job: ${originalAssignedAt}`);
+        
+        // If this is the first redispatch, store the original assignedAt in firstAssignedAt
+        if (!job.firstAssignedAt) {
+          job.firstAssignedAt = originalAssignedAt;
+        }
+        
+        // Keep the original assignedAt value
+        // Note: We don't modify job.assignedAt here, as we want to keep the original value
+      } else {
+        // If this is the first redispatch, store the current assignedAt in firstAssignedAt
+        if (!job.firstAssignedAt && job.assignedAt) {
+          job.firstAssignedAt = job.assignedAt;
+        }
+        
+        // Update assignedAt to current time
+        job.assignedAt = new Date();
+      }
+    } else {
+      // First-time assignment
+      job.assignedAt = new Date();
+    }
     
     // Set auto-rejection time (6 minutes from now for SP, 2 minutes for driver)
     const autoRejectTime = new Date();
@@ -917,8 +950,10 @@ const assignDriverToJob = async (req, res) => {
       status: job.status,
       needsAcceptance: job.needsAcceptance,
       assignedAt: job.assignedAt,
+      firstAssignedAt: job.firstAssignedAt,
       autoRejectAt: job.autoRejectAt,
-      truck: job.truck
+      truck: job.truck,
+      isRedispatch
     });
     
     // Create a status history entry for the assignment
@@ -926,7 +961,9 @@ const assignDriverToJob = async (req, res) => {
       status: 'Pending Acceptance',
       timestamp: new Date(),
       updatedBy: req.user.firstName + ' ' + req.user.lastName,
-      notes: `Assigned to ${isSP ? 'SP' : 'driver'} ${user.firstName} ${user.lastName}`
+      notes: isRedispatch 
+        ? `Reassigned to ${isSP ? 'SP' : 'driver'} ${user.firstName} ${user.lastName}` 
+        : `Assigned to ${isSP ? 'SP' : 'driver'} ${user.firstName} ${user.lastName}`
     };
     
     // Initialize statusHistory array if it doesn't exist
@@ -981,7 +1018,7 @@ const assignDriverToJob = async (req, res) => {
     }
     
     res.json({
-      message: `Job assigned to ${isSP ? 'SP' : 'driver'} successfully`,
+      message: `Job ${isRedispatch ? 'reassigned' : 'assigned'} to ${isSP ? 'SP' : 'driver'} successfully`,
       job
     });
   } catch (error) {

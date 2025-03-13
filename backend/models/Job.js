@@ -82,6 +82,7 @@ const jobSchema = mongoose.Schema({
   driver: { type: String }, // Driver name (for display purposes)
   truck: { type: String }, // Truck assigned to the job
   assignedAt: { type: Date }, // When the job was assigned to a driver
+  firstAssignedAt: { type: Date }, // Original assignment time (preserved during redispatch)
   
   // Track previous drivers when job is reassigned
   previousDrivers: [{
