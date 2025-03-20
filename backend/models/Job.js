@@ -126,7 +126,7 @@ const jobSchema = mongoose.Schema({
   rejectionReason: { type: String }, // Reason for GOA rejection
   approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // User who approved/rejected the GOA request
   approvedAt: { type: Date }, // When the GOA request was approved/rejected
-});
+}, { timestamps: true }); // Add timestamps option to automatically manage createdAt and updatedAt fields
 
 // Virtual field to ensure backward compatibility
 jobSchema.virtual('id').get(function() {

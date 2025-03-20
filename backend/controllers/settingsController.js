@@ -1,5 +1,6 @@
 // backend/controllers/settingsController.js
 const User = require('../models/userModel');
+const Vehicle = require('../models/Vehicle');
 
 /**
  * Get all settings including users
@@ -55,12 +56,38 @@ const getSettings = async (req, res) => {
       vendorId: user.vendorId || user.vendorNumber || ''
     }));
 
+    // Fetch vehicles from the database
+    let vehicles = [];
+    try {
+      const vehiclesFromDB = await Vehicle.find({});
+      
+      // Map to frontend structure
+      vehicles = vehiclesFromDB.map(vehicle => ({
+        id: vehicle._id,
+        name: vehicle.name,
+        make: vehicle.make || '',
+        model: vehicle.model || '',
+        year: vehicle.year || '',
+        type: vehicle.type,
+        driverId: vehicle.driverId || null,
+        driverName: vehicle.driverName || null,
+        vendorId: vehicle.vendorId || '',
+        status: vehicle.status || 'Off Duty',
+        lat: vehicle.lat || 0,
+        lng: vehicle.lng || 0,
+        driver: vehicle.driverName || null // For backward compatibility
+      }));
+    } catch (vehicleError) {
+      console.error('Error fetching vehicles:', vehicleError);
+      // Don't fail the entire request, just log the error and continue with empty vehicles array
+    }
+
     // Return all settings
     res.json({
       locations: [], // Placeholder for locations
       selectedLocation: '', // Placeholder for selected location
       sites: [], // Placeholder for sites
-      vehicles: [], // Placeholder for vehicles
+      vehicles, // Vehicles from database
       users
     });
   } catch (error) {
@@ -76,8 +103,9 @@ const getSettings = async (req, res) => {
  */
 const updateSettings = async (req, res) => {
   try {
-    const { users } = req.body;
+    const { users, vehicles } = req.body;
 
+    // Process users if provided
     if (users && Array.isArray(users)) {
       // Process each user
       for (const user of users) {
@@ -191,6 +219,77 @@ const updateSettings = async (req, res) => {
             });
             
             await userToUpdate.save();
+          }
+        }
+      }
+    }
+
+    // Process vehicles if provided
+    if (vehicles && Array.isArray(vehicles)) {
+      // Process each vehicle
+      for (const vehicle of vehicles) {
+        if (vehicle.id) {
+          // Update existing vehicle
+          try {
+            const vehicleToUpdate = await Vehicle.findById(vehicle.id);
+            
+            if (vehicleToUpdate) {
+              // Update basic information
+              vehicleToUpdate.name = vehicle.name || vehicleToUpdate.name;
+              vehicleToUpdate.make = vehicle.make || vehicleToUpdate.make;
+              vehicleToUpdate.model = vehicle.model || vehicleToUpdate.model;
+              vehicleToUpdate.year = vehicle.year || vehicleToUpdate.year;
+              vehicleToUpdate.type = vehicle.type || vehicleToUpdate.type;
+              
+              // Update driver information
+              vehicleToUpdate.driverId = vehicle.driverId || vehicleToUpdate.driverId;
+              vehicleToUpdate.driverName = vehicle.driverName || vehicle.driver || vehicleToUpdate.driverName;
+              
+              // Update status and location
+              if (vehicle.status) {
+                vehicleToUpdate.status = vehicle.status;
+              }
+              if (vehicle.lat !== undefined) {
+                vehicleToUpdate.lat = vehicle.lat;
+              }
+              if (vehicle.lng !== undefined) {
+                vehicleToUpdate.lng = vehicle.lng;
+              }
+              
+              // Save the updated vehicle
+              await vehicleToUpdate.save();
+            }
+          } catch (vehicleError) {
+            console.error(`Error updating vehicle ${vehicle.id}:`, vehicleError);
+            // Continue processing other vehicles
+          }
+        } else {
+          // Create new vehicle
+          try {
+            // Find vendor ID from current user or from vehicle data
+            const vendorId = vehicle.vendorId || (req.user && (req.user.vendorId || req.user.vendorNumber)) || 'VEH' + Date.now().toString().slice(-8);
+            
+            // Create new vehicle document
+            const newVehicle = new Vehicle({
+              name: vehicle.name,
+              make: vehicle.make || '',
+              model: vehicle.model || '',
+              year: vehicle.year || '',
+              type: vehicle.type,
+              driverId: vehicle.driverId || null,
+              driverName: vehicle.driverName || vehicle.driver || null,
+              vendorId: vendorId,
+              status: vehicle.status || 'Off Duty',
+              lat: vehicle.lat || 0,
+              lng: vehicle.lng || 0,
+              createdBy: req.user ? req.user.id : null
+            });
+            
+            // Save the new vehicle
+            await newVehicle.save();
+          } catch (vehicleError) {
+            console.error('Error creating new vehicle:', vehicleError);
+            // Continue processing other vehicles
           }
         }
       }

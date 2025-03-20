@@ -8,6 +8,7 @@ import Rates from '../settings/Rates';
 import Sites from '../settings/Sites';
 import Fleet from '../settings/Fleet';
 import Users from '../settings/Users';
+import Drivers from '../settings/Drivers';
 
 function Settings() {
   const isSmallScreen = useMediaQuery('(max-width:600px)');
@@ -39,12 +40,21 @@ function Settings() {
       
       const { locations, selectedLocation, sites, vehicles, users } = response.data;
 
+      console.log('Settings.js - Fetched settings data', response.data);
+      console.log('Settings.js - Vehicles data:', vehicles);
+
       // Populate the state with data from the backend
       setLocations(locations || []);
       setSelectedLocation(selectedLocation || '');
       setSites(sites || []);
       setVehicles(vehicles || []);
       setUsers(users || []);
+      
+      // Store vehicles in localStorage to make them available to all components
+      if (vehicles && Array.isArray(vehicles)) {
+        localStorage.setItem('fleetVehicles', JSON.stringify(vehicles));
+        console.log('Settings.js - Stored fleet vehicles in localStorage');
+      }
     } catch (error) {
       console.error('Error fetching settings:', error);
       
@@ -109,6 +119,7 @@ function Settings() {
           <Tab label="Sites" />
           <Tab label="Fleet" />
           <Tab label="Users" />
+          <Tab label="Drivers" />
           {/* Other tabs */}
         </Tabs>
 
@@ -129,6 +140,9 @@ function Settings() {
         )}
         {tabValue === 3 && (
           <Users users={users} setUsers={setUsers} updateSettings={updateSettings} />
+        )}
+        {tabValue === 4 && (
+          <Drivers />
         )}
         {/* Other sections */}
       </Container>

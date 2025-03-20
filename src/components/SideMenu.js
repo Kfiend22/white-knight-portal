@@ -42,6 +42,7 @@ function SideMenu() {
   // State variables
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [userRole, setUserRole] = useState(null);
+  const [secondaryRoles, setSecondaryRoles] = useState({});
 
   // Avatar Dropdown Menu State
   const [anchorEl, setAnchorEl] = useState(null);
@@ -145,6 +146,12 @@ function SideMenu() {
           const effectiveRole = user.primaryRole || user.role;
           console.log('Setting user role:', effectiveRole);
           setUserRole(effectiveRole);
+          
+          // Store secondary roles if available
+          if (user.secondaryRoles) {
+            console.log('Setting secondary roles:', user.secondaryRoles);
+            setSecondaryRoles(user.secondaryRoles);
+          }
         } else {
           console.warn('No role found in user data');
           // Set a default role to ensure menu items load
@@ -208,26 +215,48 @@ function SideMenu() {
     setDrawerOpen(!drawerOpen);
   };
 
+  // Helper function to check if user has access to a menu item
+  const hasAccess = (itemRoles) => {
+    // If no roles specified, everyone has access
+    if (!itemRoles || itemRoles.length === 0) return true;
+    
+    // Check if primary role has access
+    if (itemRoles.includes(userRole)) return true;
+    
+    // Check if any secondary role has access
+    if (secondaryRoles) {
+      // For sOW users, always grant access to all pages
+      if (userRole === 'sOW') return true;
+      
+      // Check each secondary role
+      for (const [role, hasRole] of Object.entries(secondaryRoles)) {
+        if (hasRole && itemRoles.includes(role)) return true;
+      }
+    }
+    
+    return false;
+  };
+
   // Navigation items based on user role
   const navItems = useMemo(() => {
-    console.log('Building nav items with userRole:', userRole);
+    console.log('Building nav items with userRole:', userRole, 'and secondaryRoles:', secondaryRoles);
     
     const items = [
       { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', roles: ['OW', 'RM', 'SP', 'MN', 'DV', 'DP'] },
-      { text: 'Submissions', icon: <SubmissionsIcon />, path: '/submissions', roles: ['OW', 'RM'] },
-      { text: 'Payments', icon: <PaymentIcon />, path: '/payments', roles: ['OW', 'RM', 'SP', 'MN', 'DP'] },
-      { text: 'Performance', icon: <BarChartIcon />, path: '/performance', roles: ['OW', 'RM', 'SP', 'MN', 'DP'] },
-      { text: 'Settings', icon: <SettingsIcon />, path: '/settings', roles: ['OW', 'RM', 'SP', 'MN', 'DP'] },
+      { text: 'Submissions', icon: <SubmissionsIcon />, path: '/submissions', roles: ['OW', 'RM', 'sOW'] },
+      { text: 'Payments', icon: <PaymentIcon />, path: '/payments', roles: ['OW', 'RM', 'SP', 'MN', 'DP', 'sOW'] },
+      { text: 'Performance', icon: <BarChartIcon />, path: '/performance', roles: ['OW', 'RM', 'SP', 'MN', 'DP', 'sOW'] },
+      { text: 'Settings', icon: <SettingsIcon />, path: '/settings', roles: ['OW', 'RM', 'SP', 'MN', 'DP', 'sOW'] },
     ];
     
     // Add Regions menu item for Owner role only
-    if (userRole === 'OW') {
-      console.log('Adding Regions menu item for Owner');
-      items.push({ text: 'Regions', icon: <RegionsIcon />, path: '/regions', roles: ['OW'] });
+    if (userRole === 'OW' || userRole === 'sOW') {
+      console.log('Adding Regions menu item for Owner/sOW');
+      items.push({ text: 'Regions', icon: <RegionsIcon />, path: '/regions', roles: ['OW', 'sOW'] });
     }
     
     return items;
-  }, [userRole]);
+  }, [userRole, secondaryRoles]);
 
   return (
     <>
@@ -292,7 +321,7 @@ function SideMenu() {
           <List>
             {userRole ? (
               navItems
-                .filter(item => !item.roles || item.roles.includes(userRole))
+                .filter(item => hasAccess(item.roles))
                 .map((item) => (
                   <ListItem button key={item.text} onClick={() => navigate(item.path)}>
                     <ListItemIcon>{item.icon}</ListItemIcon>

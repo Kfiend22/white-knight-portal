@@ -13,6 +13,7 @@ const settingsRoutes = require('./routes/settingsRoutes');
 const jobRoutes = require('./routes/jobRoutes');
 const driverRoutes = require('./routes/driverRoutes');
 const locationRoutes = require('./routes/locationRoutes');
+const vehicleRoutes = require('./routes/vehicleRoutes');
 const { initSocket } = require('./socket');
 
 const app = express();
@@ -40,6 +41,7 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/drivers', driverRoutes);
 app.use('/api/location', locationRoutes);
 app.use('/api/user', userRoutes); // Add this route for user/companies endpoint
+app.use('/api/vehicles', vehicleRoutes); // Add new vehicle routes
 
 // In production, serve the frontend build folder so that unknown routes return index.html
 if (process.env.NODE_ENV === 'production') {

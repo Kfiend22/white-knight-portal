@@ -1,8 +1,18 @@
 const Job = require('../models/Job');
 
+// Store active auto-rejection timeouts by job ID
+const autoRejectionTimeouts = new Map();
+
 // Helper function to schedule auto-rejection of jobs that are not accepted within the timeframe
 const scheduleAutoRejection = async (jobId) => {
   try {
+    // Clear any existing timeout for this job
+    if (autoRejectionTimeouts.has(jobId)) {
+      clearTimeout(autoRejectionTimeouts.get(jobId));
+      autoRejectionTimeouts.delete(jobId);
+      console.log(`Cleared existing auto-rejection timeout for job ${jobId}`);
+    }
+
     // Find the job to determine if it's assigned to an SP or driver
     const job = await Job.findById(jobId);
     if (!job) {
@@ -25,14 +35,35 @@ const scheduleAutoRejection = async (jobId) => {
     
     console.log(`Auto-rejection scheduled for job ${jobId} (will expire in ${isSP ? '6' : '2'} minutes)`);
     
-    setTimeout(async () => {
+    // Store the timeout ID so we can clear it if needed
+    const timeoutId = setTimeout(async () => {
       try {
+        // Remove the timeout from the map since it's now executing
+        autoRejectionTimeouts.delete(jobId);
+        
         // Find the job by ID (refetch to get latest state)
         const job = await Job.findById(jobId);
+        
+        // Enhanced logging to debug the job state at timeout execution
+        const now = new Date();
+        console.log(`Auto-rejection timeout executing for job ${jobId}:`, {
+          currentTime: now.toISOString(),
+          jobStatus: job?.status,
+          acceptedAt: job?.acceptedAt ? new Date(job.acceptedAt).toISOString() : null,
+          updatedAt: job?.updatedAt ? new Date(job.updatedAt).toISOString() : null,
+          timeoutScheduledAt: new Date(now.getTime() - autoRejectionTimeout).toISOString()
+        });
         
         // If job doesn't exist or is no longer in Pending Acceptance status, do nothing
         if (!job || job.status !== 'Pending Acceptance') {
           console.log(`Auto-rejection not needed for job ${jobId}: Job not found or status changed`);
+          return;
+        }
+        
+        // Enhanced check: Compare updatedAt with the time the timeout was scheduled
+        const scheduledTime = new Date(now.getTime() - autoRejectionTimeout); // Calculate when the timeout was scheduled
+        if (job.updatedAt && new Date(job.updatedAt) > scheduledTime) {
+          console.log(`Auto-rejection skipped for job ${jobId}: Job updated after timeout was scheduled. updatedAt: ${job.updatedAt}, scheduledTime: ${scheduledTime.toISOString()}`);
           return;
         }
         
@@ -42,23 +73,36 @@ const scheduleAutoRejection = async (jobId) => {
           return;
         }
         
-        // If the job is still pending acceptance after the timeout, auto-reject it
-        console.log(`Auto-rejecting job ${jobId} after timeout`);
+        // Check if the job has been redispatched (by checking if the current driver is different from when the timeout was set)
+        if (job.previousDrivers && job.previousDrivers.length > 0) {
+          const lastRedispatch = job.previousDrivers[job.previousDrivers.length - 1];
+          // If the job was redispatched after this timeout was set, don't auto-reject
+          if (lastRedispatch.reassignedAt > new Date(Date.now() - autoRejectionTimeout)) {
+            console.log(`Auto-rejection not needed for job ${jobId}: Job has been redispatched`);
+            return;
+          }
+        }
         
-        // Update job status to Rejected
-        job.status = 'Rejected';
-        job.rejectionReason = 'Auto-rejected: Service Provider did not respond within the required timeframe';
+        // If the job is still pending acceptance after the timeout, set it back to Pending
+        console.log(`Job ${jobId} acceptance expired after timeout`);
+        
+        // Store the driver information before clearing it
+        const expiredDriverId = job.driverId;
+        const expiredDriverName = job.driver;
+        
+        // Update job status to Pending (not Rejected)
+        job.status = 'Pending';
         job.rejectedAt = new Date();
         
-        // Add to rejectedBy array
+        // Add to rejectedBy array to track the expired driver
         if (!job.rejectedBy) {
           job.rejectedBy = [];
         }
         
         job.rejectedBy.push({
-          driverId: job.driverId,
-          driverName: job.driver,
-          reason: 'Auto-rejected: No response within timeframe',
+          driverId: expiredDriverId,
+          driverName: expiredDriverName,
+          reason: 'Auto-expired: No response within timeframe',
           timestamp: new Date()
         });
         
@@ -68,14 +112,25 @@ const scheduleAutoRejection = async (jobId) => {
         }
         
         job.statusHistory.push({
-          status: 'Rejected',
+          status: 'Pending',
           timestamp: new Date(),
           updatedBy: 'System',
-          notes: 'Auto-rejected: Service Provider did not respond within the required timeframe'
+          notes: `Acceptance expired: ${expiredDriverName} did not respond within the required timeframe`
         });
         
+        // Clear driver assignment fields
+        job.driverId = null;
+        job.driver = null;
+        job.truck = null;
+        job.assignedAt = null;
+        job.autoRejectAt = null;
+        // Keep firstAssignedAt for historical reference
+        
+        // Update job visibility now that the driver is unassigned
+        await updateJobVisibility(job);
+        
         await job.save();
-        console.log(`Job ${jobId} auto-rejected successfully`);
+        console.log(`Job ${jobId} set back to Pending after acceptance expired`);
         
         // Send notification to the dispatcher using Socket.IO
         try {
@@ -86,24 +141,37 @@ const scheduleAutoRejection = async (jobId) => {
           if (job.provider) {
             io.to(`user_${job.provider}`).emit('jobAutoRejected', {
               jobId: job._id,
-              message: `Job auto-rejected: ${job.driver} did not respond within the required timeframe`,
+              message: `Job acceptance expired: ${expiredDriverName} did not respond within the required timeframe`,
               jobDetails: {
                 id: job._id,
                 service: job.service,
                 location: job.location,
-                status: job.status
+                status: job.status,
+                previousDriver: expiredDriverName
               }
             });
-            console.log(`Auto-rejection notification sent to provider ${job.provider}`);
+            console.log(`Acceptance expiration notification sent to provider ${job.provider}`);
+          }
+          
+          // Emit general job update to all users who can see this job
+          if (job.visibleTo && job.visibleTo.length > 0) {
+            job.visibleTo.forEach(userId => {
+              io.to(`user_${userId}`).emit('jobUpdated', job);
+            });
+            console.log(`Job auto-rejection update event emitted to ${job.visibleTo.length} users`);
           }
         } catch (socketError) {
-          console.error(`Error sending auto-rejection notification:`, socketError);
+          console.error(`Error sending acceptance expiration notification:`, socketError);
         }
         
       } catch (error) {
         console.error(`Error auto-rejecting job ${jobId}:`, error);
       }
     }, autoRejectionTimeout);
+    
+    // Store the timeout ID in the map for future reference
+    autoRejectionTimeouts.set(jobId.toString(), timeoutId);
+    console.log(`Stored auto-rejection timeout ID for job ${jobId}`);
   } catch (error) {
     console.error(`Error scheduling auto-rejection for job ${jobId}:`, error);
   }
@@ -300,7 +368,23 @@ const getJobs = async (req, res) => {
     // This ensures OW users with driver secondary role still see all jobs
     if (req.user.primaryRole === 'driver') {
       const driverName = `${req.user.firstName} ${req.user.lastName}`;
-      visibleJobs = visibleJobs.filter(job => job.driver === driverName);
+      
+      // Filter jobs to only show those assigned to this driver
+      // AND exclude expired 'Pending Acceptance' jobs
+      visibleJobs = visibleJobs.filter(job => {
+        // Check if job is assigned to this driver
+        const isAssignedToDriver = job.driver === driverName;
+        
+        // Check if job is expired (Pending Acceptance + past autoRejectAt time)
+        const isExpired = job.status === 'Pending Acceptance' && 
+                         job.autoRejectAt && 
+                         new Date() > new Date(job.autoRejectAt);
+        
+        // Include job only if it's assigned to this driver AND not expired
+        return isAssignedToDriver && !isExpired;
+      });
+      
+      console.log(`After driver and expiration filtering: ${visibleJobs.length} jobs`);
     }
     
     // Add category filtering if provided
@@ -519,6 +603,21 @@ const createJob = async (req, res) => {
     
     // Now update the visibleTo array with users who should be able to see this job
     await updateJobVisibility(job);
+    
+    // Emit socket event to all users who can see this job
+    try {
+      const { getIO } = require('../socket');
+      const io = getIO();
+      
+      if (job.visibleTo && job.visibleTo.length > 0) {
+        job.visibleTo.forEach(userId => {
+          io.to(`user_${userId}`).emit('jobUpdated', job);
+        });
+        console.log(`Job creation event emitted to ${job.visibleTo.length} users`);
+      }
+    } catch (socketError) {
+      console.error('Error emitting job creation event:', socketError);
+    }
     
     console.log('Job created successfully:', job._id);
     res.status(201).json(job);
@@ -775,6 +874,22 @@ const updateJobStatus = async (req, res) => {
     }
     
     const updatedJob = await job.save();
+    
+    // Emit socket event to all users who can see this job
+    try {
+      const { getIO } = require('../socket');
+      const io = getIO();
+      
+      if (updatedJob.visibleTo && updatedJob.visibleTo.length > 0) {
+        updatedJob.visibleTo.forEach(userId => {
+          io.to(`user_${userId}`).emit('jobUpdated', updatedJob);
+        });
+        console.log(`Job status update event emitted to ${updatedJob.visibleTo.length} users`);
+      }
+    } catch (socketError) {
+      console.error('Error emitting job status update event:', socketError);
+    }
+    
     res.json(updatedJob);
   } catch (error) {
     console.error('Error updating job status:', error);
@@ -792,6 +907,21 @@ const markJobPaymentSubmitted = async (req, res) => {
     
     job.paymentSubmitted = true;
     const updatedJob = await job.save();
+    
+    // Emit socket event to all users who can see this job
+    try {
+      const { getIO } = require('../socket');
+      const io = getIO();
+      
+      if (updatedJob.visibleTo && updatedJob.visibleTo.length > 0) {
+        updatedJob.visibleTo.forEach(userId => {
+          io.to(`user_${userId}`).emit('jobUpdated', updatedJob);
+        });
+        console.log(`Job payment status update event emitted to ${updatedJob.visibleTo.length} users`);
+      }
+    } catch (socketError) {
+      console.error('Error emitting job payment status update event:', socketError);
+    }
     
     res.json(updatedJob);
   } catch (error) {
@@ -924,9 +1054,21 @@ const assignDriverToJob = async (req, res) => {
         // Update assignedAt to current time
         job.assignedAt = new Date();
       }
+      
+      // Reset acceptance-related fields when redispatching, regardless of previous acceptance
+      job.acceptedAt = null; // Clear the acceptedAt timestamp
+      
+      // If the job was previously accepted, add a note to the status history
+      const wasAccepted = job.status === 'Dispatched' || job.status === 'En Route' || 
+                          job.status === 'On Site' || job.status === 'Accepted';
+      
+      if (wasAccepted) {
+        console.log(`Job ${job._id} was previously accepted, resetting acceptance state for new driver`);
+      }
     } else {
       // First-time assignment
       job.assignedAt = new Date();
+      job.acceptedAt = null; // Ensure acceptedAt is null for new assignments
     }
     
     // Set auto-rejection time (6 minutes from now for SP, 2 minutes for driver)
@@ -952,6 +1094,7 @@ const assignDriverToJob = async (req, res) => {
       assignedAt: job.assignedAt,
       firstAssignedAt: job.firstAssignedAt,
       autoRejectAt: job.autoRejectAt,
+      acceptedAt: job.acceptedAt, // Log the reset acceptedAt field
       truck: job.truck,
       isRedispatch
     });
@@ -986,10 +1129,14 @@ const assignDriverToJob = async (req, res) => {
     
     // Send notification to the driver/SP using Socket.IO
     try {
-      const { getIO } = require('../socket');
-      const io = getIO();
-      
-      const socketRoom = `user_${driverId}`;
+      const { getIO, emitToUser } = require('../socket');
+
+      // --- ADDED LOGGING ---
+      console.log('assignDriverToJob: Called');
+      console.log('assignDriverToJob: driverId =', driverId);
+      // --- END ADDED LOGGING ---
+
+      // Prepare the notification data
       const socketEvent = 'jobAssigned';
       const socketData = {
         jobId: job._id,
@@ -1004,19 +1151,57 @@ const assignDriverToJob = async (req, res) => {
         }
       };
       
-      console.log(`Emitting socket event:`, {
-        room: socketRoom,
-        event: socketEvent,
-        data: socketData
+      console.log(`Preparing to emit ${socketEvent} to driver/SP ${driverId}:`, {
+        jobId: job._id,
+        service: job.service,
+        location: job.location
       });
       
-      // Emit to the assigned driver/SP
-      io.to(socketRoom).emit(socketEvent, socketData);
-      console.log(`Job assignment notification sent to ${isSP ? 'SP' : 'driver'} ${driverId}`);
+      // Use the enhanced emitToUser function for better error handling and logging
+      const emitSuccess = emitToUser(driverId, socketEvent, socketData);
+
+      // --- ADDED LOGGING ---
+      console.log('assignDriverToJob: emitToUser result =', emitSuccess);
+      // --- END ADDED LOGGING ---
+      
+      if (emitSuccess) {
+        console.log(`Job assignment notification successfully sent to ${isSP ? 'SP' : 'driver'} ${driverId}`);
+      } else {
+        console.warn(`Job assignment notification may not have reached ${isSP ? 'SP' : 'driver'} ${driverId}`);
+      }
+
+      // Emit general job update to all users who can see this job
+      if (job.visibleTo && job.visibleTo.length > 0) {
+        const io = getIO();
+        let updateCount = 0;
+
+        job.visibleTo.forEach(userId => {
+          try {
+            // Skip the driver/SP who already received the jobAssigned event
+            if (userId.toString() !== driverId.toString()) {
+              io.to(`user_${userId}`).emit('jobUpdated', job);
+              updateCount++;
+            }
+          } catch (userEmitError) {
+            console.error(`Error emitting jobUpdated to user ${userId}:`, userEmitError);
+          }
+        });
+
+        console.log(`Job assignment update event emitted to ${updateCount} users`);
+      }
     } catch (socketError) {
       console.error(`Error sending job assignment notification:`, socketError);
+
+      // Log detailed error information for debugging
+      console.error('Error details:', {
+        errorName: socketError.name,
+        errorMessage: socketError.message,
+        errorStack: socketError.stack,
+        jobId: job._id,
+        driverId: driverId
+      });
     }
-    
+
     res.json({
       message: `Job ${isRedispatch ? 'reassigned' : 'assigned'} to ${isSP ? 'SP' : 'driver'} successfully`,
       job
@@ -1061,7 +1246,12 @@ const acceptJob = async (req, res) => {
     job.acceptedAt = new Date();
     job.dispatchedAt = new Date(); // Record dispatch time
     
-    // Clear the auto-rejection time since the job has been accepted
+    // Clear the auto-rejection timeout and time since the job has been accepted
+    if (autoRejectionTimeouts.has(job._id.toString())) {
+      console.log(`Clearing auto-rejection timeout for job ${job._id} on acceptance`);
+      clearTimeout(autoRejectionTimeouts.get(job._id.toString()));
+      autoRejectionTimeouts.delete(job._id.toString());
+    }
     job.autoRejectAt = null;
     
     // Initialize statusHistory array if it doesn't exist
@@ -1098,6 +1288,14 @@ const acceptJob = async (req, res) => {
           }
         });
         console.log(`Job acceptance notification sent to provider ${job.provider}`);
+      }
+      
+      // Emit general job update to all users who can see this job
+      if (job.visibleTo && job.visibleTo.length > 0) {
+        job.visibleTo.forEach(userId => {
+          io.to(`user_${userId}`).emit('jobUpdated', job);
+        });
+        console.log(`Job acceptance update event emitted to ${job.visibleTo.length} users`);
       }
     } catch (socketError) {
       console.error(`Error sending job acceptance notification:`, socketError);
@@ -1140,7 +1338,12 @@ const rejectJob = async (req, res) => {
     job.rejectionReason = rejectionReason;
     job.rejectedAt = new Date();
     
-    // Clear the auto-rejection time since the job has been manually rejected
+    // Clear the auto-rejection timeout and time since the job has been manually rejected
+    if (autoRejectionTimeouts.has(job._id.toString())) {
+      console.log(`Clearing auto-rejection timeout for job ${job._id} on rejection`);
+      clearTimeout(autoRejectionTimeouts.get(job._id.toString()));
+      autoRejectionTimeouts.delete(job._id.toString());
+    }
     job.autoRejectAt = null;
     
     // Track the rejection in the rejectedBy array
@@ -1188,6 +1391,14 @@ const rejectJob = async (req, res) => {
           }
         });
         console.log(`Job rejection notification sent to provider ${job.provider}`);
+      }
+      
+      // Emit general job update to all users who can see this job
+      if (job.visibleTo && job.visibleTo.length > 0) {
+        job.visibleTo.forEach(userId => {
+          io.to(`user_${userId}`).emit('jobUpdated', job);
+        });
+        console.log(`Job rejection update event emitted to ${job.visibleTo.length} users`);
       }
     } catch (socketError) {
       console.error(`Error sending job rejection notification:`, socketError);
