@@ -23,6 +23,8 @@ const PORT = process.env.PORT || 5000;
 // Connect to MongoDB using config
 connectDB();
 
+console.log("Server starting up... Logging test for job deletion debugging");
+
 app.use(bodyParser.json());
 app.use(cors());
 
@@ -59,6 +61,106 @@ if (process.env.NODE_ENV === 'production') {
 // Health check endpoint
 app.get('/api/auth/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Server is running' });
+});
+
+// Test MongoDB connection
+app.get('/api/test/db', async (req, res) => {
+  try {
+    const Job = require('./models/Job');
+    const count = await Job.countDocuments();
+    console.log(`MongoDB connection test: Found ${count} jobs`);
+    res.status(200).json({ 
+      status: 'ok', 
+      message: 'MongoDB connection is working', 
+      jobCount: count 
+    });
+  } catch (error) {
+    console.error('MongoDB connection test failed:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'MongoDB connection test failed', 
+      error: error.message 
+    });
+  }
+});
+
+// Test authentication middleware
+const { protect } = require('./middleware/authMiddleware');
+app.get('/api/test/auth', protect, (req, res) => {
+  console.log('Auth test - User:', JSON.stringify(req.user));
+  res.status(200).json({
+    status: 'ok',
+    message: 'Authentication is working',
+    user: {
+      id: req.user._id,
+      username: req.user.username,
+      email: req.user.email,
+      primaryRole: req.user.primaryRole,
+      secondaryRoles: req.user.secondaryRoles
+    }
+  });
+});
+
+// Test job deletion
+app.delete('/api/test/delete-job/:id', protect, async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`Test route - Attempting to delete job with ID: ${id}`);
+    console.log(`Test route - User: ${JSON.stringify(req.user)}`);
+    
+    // Check if user has permission to delete jobs
+    const allowedRoles = ['OW', 'sOW', 'RM'];
+    if (!allowedRoles.includes(req.user.primaryRole)) {
+      console.log(`Test route - Permission denied: User role ${req.user.primaryRole} not in allowed roles`);
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to delete jobs'
+      });
+    }
+    
+    // Find the job
+    const Job = require('./models/Job');
+    console.log(`Test route - Finding job with ID: ${id}`);
+    const job = await Job.findById(id);
+    
+    if (!job) {
+      console.log(`Test route - Job not found with ID: ${id}`);
+      return res.status(404).json({
+        success: false,
+        message: 'Job not found'
+      });
+    }
+    
+    console.log(`Test route - Job found: ${job.id}, status: ${job.status}`);
+    
+    // Only allow deletion of cancelled jobs
+    if (job.status !== 'Canceled') {
+      console.log(`Test route - Cannot delete job with status: ${job.status}`);
+      return res.status(400).json({
+        success: false,
+        message: 'Only cancelled jobs can be permanently deleted'
+      });
+    }
+    
+    // Delete the job from the database using findByIdAndDelete
+    console.log(`Test route - Deleting job from database: ${job.id}`);
+    await Job.findByIdAndDelete(id);
+    
+    console.log(`Test route - Job deleted successfully: ${job.id}`);
+    return res.status(200).json({
+      success: true,
+      message: 'Job deleted successfully'
+    });
+  } catch (error) {
+    console.error(`Test route - Error in deleteJob function: ${error.message}`);
+    console.error(error.stack);
+    
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete job',
+      error: error.message
+    });
+  }
 });
 
 // Optional: a catch-all route for unknown API calls (only for /api routes)

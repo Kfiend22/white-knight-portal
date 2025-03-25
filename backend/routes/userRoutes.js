@@ -20,20 +20,10 @@ router.get('/vendor-ids', userController.getUserVendorIds);
 // Get companies associated with the current user - must be before /:id
 router.get('/companies', protect, userController.getUserCompanies);
 
-// Get current user profile - must be before /:id to avoid treating 'profile' as an ID
-router.get('/profile', protect, async (req, res) => {
-  try {
-    // User is already loaded in req.user by the protect middleware
-    // Just remove the password field
-    const user = req.user.toObject();
-    delete user.password;
-    
-    res.json(user);
-  } catch (error) {
-    console.error('Error fetching user profile:', error);
-    res.status(500).json({ message: error.message });
-  }
-});
+// User profile routes - must be before /:id to avoid treating 'profile' as an ID
+const userProfileController = require('../controllers/userProfileController');
+router.get('/profile', protect, userProfileController.getUserProfile);
+router.put('/profile', protect, userProfileController.updateUserProfile);
 
 // Get user by ID - must be after specific routes to avoid treating route names as IDs
 router.get('/:id', protect, userController.getUserById);

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile Update Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #response {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            background-color: #f9f9f9;
+            white-space: pre-wrap;
+        }
+        .checkbox-group {
+            margin-top: 10px;
+        }
+        .checkbox-label {
+            font-weight: normal;
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .checkbox-label input {
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Profile Update Test</h1>
+    <p>This page helps test the profile update functionality with detailed error handling.</p>
+    
+    <div class="form-group">
+        <label for="token">JWT Token:</label>
+        <input type="text" id="token" placeholder="Paste your JWT token here">
+    </div>
+    
+    <div class="form-group">
+        <label for="firstName">First Name:</label>
+        <input type="text" id="firstName" placeholder="First Name">
+    </div>
+    
+    <div class="form-group">
+        <label for="lastName">Last Name:</label>
+        <input type="text" id="lastName" placeholder="Last Name">
+    </div>
+    
+    <div class="form-group">
+        <label for="username">Username:</label>
+        <input type="text" id="username" placeholder="Username">
+    </div>
+    
+    <div class="form-group">
+        <label for="phoneNumber">Phone Number:</label>
+        <input type="text" id="phoneNumber" placeholder="Phone Number">
+    </div>
+    
+    <div class="form-group">
+        <label for="password">New Password (optional):</label>
+        <input type="password" id="password" placeholder="Leave blank to keep current password">
+    </div>
+    
+    <div class="form-group">
+        <label>Notification Preferences:</label>
+        <div class="checkbox-group">
+            <label class="checkbox-label">
+                <input type="checkbox" id="receiveEmailNotifications"> Receive Email Notifications
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" id="receiveTextNotifications"> Receive Text Notifications
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" id="notifyOnNewJob"> Notify on New Job
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" id="notifyOnJobCanceled"> Notify on Job Canceled
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" id="notifyOnJobOnScene"> Notify on Job On Scene
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" id="notifyOnJobReassigned"> Notify on Job Reassigned
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" id="notifyOnJobMarkedAsGOA"> Notify on Job Marked as GOA
+            </label>
+        </div>
+    </div>
+    
+    <button id="fetchProfile">Fetch Current Profile</button>
+    <button id="updateProfile">Update Profile</button>
+    
+    <h2>Response:</h2>
+    <div id="response">No response yet</div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Try to get token from localStorage if not provided
+            if (!document.getElementById('token').value) {
+                const storedToken = localStorage.getItem('token');
+                if (storedToken) {
+                    document.getElementById('token').value = storedToken;
+                }
+            }
+            
+            // Fetch Profile Button
+            document.getElementById('fetchProfile').addEventListener('click', async function() {
+                const token = document.getElementById('token').value;
+                if (!token) {
+                    document.getElementById('response').textContent = 'Please provide a JWT token';
+                    return;
+                }
+                
+                try {
+                    const response = await fetch('/api/v1/users/profile', {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    const data = await response.json();
+                    document.getElementById('response').textContent = JSON.stringify(data, null, 2);
+                    
+                    // Populate form fields with current profile data
+                    if (response.ok) {
+                        document.getElementById('firstName').value = data.firstName || '';
+                        document.getElementById('lastName').value = data.lastName || '';
+                        document.getElementById('username').value = data.username || '';
+                        document.getElementById('phoneNumber').value = data.phoneNumber || '';
+                        
+                        // Set checkboxes
+                        document.getElementById('receiveEmailNotifications').checked = data.receiveEmailNotifications || false;
+                        document.getElementById('receiveTextNotifications').checked = data.receiveTextNotifications || false;
+                        document.getElementById('notifyOnNewJob').checked = data.notifyOnNewJob || false;
+                        document.getElementById('notifyOnJobCanceled').checked = data.notifyOnJobCanceled || false;
+                        document.getElementById('notifyOnJobOnScene').checked = data.notifyOnJobOnScene || false;
+                        document.getElementById('notifyOnJobReassigned').checked = data.notifyOnJobReassigned || false;
+                        document.getElementById('notifyOnJobMarkedAsGOA').checked = data.notifyOnJobMarkedAsGOA || false;
+                    }
+                } catch (error) {
+                    document.getElementById('response').textContent = `Error: ${error.message}`;
+                }
+            });
+            
+            // Update Profile Button
+            document.getElementById('updateProfile').addEventListener('click', async function() {
+                const token = document.getElementById('token').value;
+                if (!token) {
+                    document.getElementById('response').textContent = 'Please provide a JWT token';
+                    return;
+                }
+                
+                // Create FormData object
+                const formData = new FormData();
+                formData.append('firstName', document.getElementById('firstName').value);
+                formData.append('lastName', document.getElementById('lastName').value);
+                formData.append('username', document.getElementById('username').value);
+                formData.append('phoneNumber', document.getElementById('phoneNumber').value);
+                
+                // Add password if provided
+                const password = document.getElementById('password').value;
+                if (password) {
+                    formData.append('password', password);
+                }
+                
+                // Add notification preferences
+                formData.append('receiveEmailNotifications', document.getElementById('receiveEmailNotifications').checked);
+                formData.append('receiveTextNotifications', document.getElementById('receiveTextNotifications').checked);
+                formData.append('notifyOnNewJob', document.getElementById('notifyOnNewJob').checked);
+                formData.append('notifyOnJobCanceled', document.getElementById('notifyOnJobCanceled').checked);
+                formData.append('notifyOnJobOnScene', document.getElementById('notifyOnJobOnScene').checked);
+                formData.append('notifyOnJobReassigned', document.getElementById('notifyOnJobReassigned').checked);
+                formData.append('notifyOnJobMarkedAsGOA', document.getElementById('notifyOnJobMarkedAsGOA').checked);
+                
+                try {
+                    const response = await fetch('/api/v1/users/profile', {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: formData
+                    });
+                    
+                    const data = await response.json();
+                    document.getElementById('response').textContent = JSON.stringify(data, null, 2);
+                    
+                    if (response.ok) {
+                        alert('Profile updated successfully!');
+                    }
+                } catch (error) {
+                    document.getElementById('response').textContent = `Error: ${error.message}`;
+                }
+            });
+        });
+    </script>
+</body>
+</html>

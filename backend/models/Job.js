@@ -28,7 +28,10 @@ const jobSchema = mongoose.Schema({
   customerName: { type: String, required: true },
   customerPhone: { type: String, required: true },
   customerEmail: { type: String },
+  callerName: { type: String },
+  callerPhone: { type: String },
   service: { type: String, required: true },
+  serviceLocationType: { type: String },
   serviceLocation: {
     street: { type: String, required: true, maxlength: 30 },
     city: { type: String, required: true, maxlength: 26 },
@@ -36,6 +39,7 @@ const jobSchema = mongoose.Schema({
     zip: { type: String, required: true },
     country: { type: String, required: true, default: 'USA' }
   },
+  dropoffLocationType: { type: String },
   dropoffLocation: {
     street: { type: String, maxlength: 30 },
     city: { type: String, maxlength: 26 },
@@ -45,10 +49,12 @@ const jobSchema = mongoose.Schema({
   },
   vehicle: vehicleSchema,
   classType: { type: String, required: true },
-  eta: { type: String, required: true },
+  eta: { type: String },
   pickupContact: contactSchema, // Required
   dropoffContact: optionalContactSchema, // Optional
-  notes: { type: String },
+  internalNotes: { type: String },
+  dispatcherNotes: { type: String },
+  invoiceNotes: { type: String },
   // Array of user IDs who can view this job
   visibleTo: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   status: { 
@@ -66,7 +72,9 @@ const jobSchema = mongoose.Schema({
       'En Route', 
       'On Site',
       'Awaiting Approval', // For GOA approval workflow
-      'Rejected' // For rejected GOA requests or driver rejection
+      'Rejected', // For rejected GOA requests or driver rejection
+      'Unsuccessful', // For jobs that couldn't be completed successfully
+      'GOA' // For Gone On Arrival jobs
     ], 
     default: 'Pending' 
   },
@@ -97,6 +105,7 @@ const jobSchema = mongoose.Schema({
   rejectedAt: { type: Date }, // When the job was rejected by the driver
   rejectionReason: { type: String }, // Reason provided for rejection
   autoRejectAt: { type: Date }, // When the job will be automatically rejected if not accepted
+  autoRejectTimerSetAt: { type: Date }, // When the auto-rejection timer was last set
   rejectedBy: [{ // Array to track multiple rejections if job is reassigned
     driverId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     driverName: { type: String },
@@ -122,10 +131,24 @@ const jobSchema = mongoose.Schema({
   }],
   cancellationReason: { type: String }, // Reason for job cancellation
   goaReason: { type: String }, // Reason for GOA request
+  unsuccessfulReason: { type: String }, // Reason for unsuccessful job
   approvalStatus: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' }, // GOA approval status
   rejectionReason: { type: String }, // Reason for GOA rejection
   approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // User who approved/rejected the GOA request
   approvedAt: { type: Date }, // When the GOA request was approved/rejected
+  
+  // Unsuccessful approval workflow
+  approvalStatusUnsuccessful: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' }, // Unsuccessful approval status
+  unsuccessfulApprovedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // User who approved/rejected the unsuccessful request
+  unsuccessfulApprovedAt: { type: Date }, // When the unsuccessful request was approved/rejected
+  
+  // Document uploads for the job
+  documents: [{
+    filename: { type: String }, // Original filename
+    path: { type: String }, // Path to the file relative to uploads directory
+    uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // User who uploaded the document
+    uploadedAt: { type: Date, default: Date.now } // When the document was uploaded
+  }]
 }, { timestamps: true }); // Add timestamps option to automatically manage createdAt and updatedAt fields
 
 // Virtual field to ensure backward compatibility

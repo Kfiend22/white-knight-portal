@@ -1,9 +1,10 @@
 // useJobSocket.js
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 const useJobSocket = ({ onSocketStatusChange }) => {
   const [socketConnected, setSocketConnected] = useState(false);
   const fetchInProgressRef = useRef(false);
+  const listenersSetupRef = useRef(false);
 
   // Set up listeners for socket connection events
   useEffect(() => {
@@ -38,8 +39,11 @@ const useJobSocket = ({ onSocketStatusChange }) => {
           onSocketStatusChange({ connected: true, lastEvent: null });
         }
         
-        // Set up socket event listeners when connected
-        setupSocketListeners();
+        // Set up socket event listeners when connected, but only once
+        if (!listenersSetupRef.current) {
+          setupSocketListeners();
+          listenersSetupRef.current = true;
+        }
       };
       
       const handleSocketDisconnected = (event) => {
@@ -72,25 +76,10 @@ const useJobSocket = ({ onSocketStatusChange }) => {
     } catch (error) {
       console.error('Error setting up socket connection listeners:', error);
     }
-  }, [onSocketStatusChange]);
+  }, []); // Empty dependency array to prevent re-running and avoid reference errors
 
-  // Setup socket listeners for real-time updates
-  const setupSocketListeners = () => {
-    try {
-      console.log('Setting up socket event listeners');
-      // Listen for custom events dispatched by socket handlers
-      window.addEventListener('job-assigned', handleJobEvent);
-      window.addEventListener('job-auto-rejected', handleJobEvent);
-      window.addEventListener('job-accepted', handleJobEvent);
-      window.addEventListener('job-rejected', handleJobEvent);
-      window.addEventListener('jobUpdated', handleJobUpdated);
-    } catch (error) {
-      console.error('Error setting up socket listeners:', error);
-    }
-  };
-  
-  // Handle job events
-  const handleJobEvent = (event) => {
+  // Handle job events - using useCallback to maintain stable reference
+  const handleJobEvent = useCallback((event) => {
     console.log(`${event.type} event received:`, event.detail);
     
     // Update socket status in parent component if callback provided
@@ -99,15 +88,42 @@ const useJobSocket = ({ onSocketStatusChange }) => {
         connected: true, 
         lastEvent: { 
           type: event.type, 
-          time: Date.now() 
+          time: Date.now(),
+          data: event.detail // Include the event data
         } 
       });
     }
-  };
+  }, [onSocketStatusChange]);
   
-  // Handle jobUpdated event for real-time job updates
-  const handleJobUpdated = (event) => {
+// Handle jobUpdated event for real-time job updates - using useCallback to maintain stable reference
+  const handleJobUpdated = useCallback((event) => {
     console.log('jobUpdated event received:', event.detail);
+    
+    // Check if this is a job unassignment update (when driver is cleared)
+    const updatedJob = event.detail;
+    const previousState = updatedJob?._previousState;
+    
+    if (previousState) {
+      // If we have previous state with a driver but the current job has no driver,
+      // this is an unassignment notification
+      if (previousState.driverId && !updatedJob.driverId) {
+        console.log('Job unassignment detected:', {
+          jobId: updatedJob._id || updatedJob.id,
+          previousDriverId: previousState.driverId,
+          previousDriver: previousState.driver,
+          currentStatus: updatedJob.status
+        });
+        
+        // Dispatch a custom event for job removal to force UI update
+        const jobRemovedEvent = new CustomEvent('job-removed', {
+          detail: {
+            jobId: updatedJob._id || updatedJob.id,
+            reason: updatedJob.status === 'Pending' ? 'unassigned' : updatedJob.status
+          }
+        });
+        window.dispatchEvent(jobRemovedEvent);
+      }
+    }
     
     // Update socket status in parent component if callback provided
     if (onSocketStatusChange) {
@@ -115,14 +131,54 @@ const useJobSocket = ({ onSocketStatusChange }) => {
         connected: true, 
         lastEvent: { 
           type: 'jobUpdated', 
-          time: Date.now() 
+          time: Date.now(),
+          data: event.detail // Include the event data
         } 
       });
     }
-  };
+  }, [onSocketStatusChange]);
+  
+  // Handle job removed event - using useCallback to maintain stable reference
+  const handleJobRemoved = useCallback((event) => {
+    console.log('jobRemoved event received:', event.detail);
+    
+    // Dispatch a custom event for job removal to force UI update
+    const jobRemovedEvent = new CustomEvent('job-removed', {
+      detail: event.detail
+    });
+    window.dispatchEvent(jobRemovedEvent);
+    
+    // Update socket status in parent component if callback provided
+    if (onSocketStatusChange) {
+      onSocketStatusChange({ 
+        connected: true, 
+        lastEvent: { 
+          type: 'jobRemoved', 
+          time: Date.now(),
+          data: event.detail // Include the event data
+        } 
+      });
+    }
+  }, [onSocketStatusChange]);
+
+  // Setup socket listeners for real-time updates
+  const setupSocketListeners = useCallback(() => {
+    try {
+      console.log('Setting up socket event listeners');
+      // Listen for custom events dispatched by socket handlers
+      window.addEventListener('job-assigned', handleJobEvent);
+      window.addEventListener('job-auto-rejected', handleJobEvent);
+      window.addEventListener('job-accepted', handleJobEvent);
+      window.addEventListener('job-rejected', handleJobEvent);
+      window.addEventListener('jobUpdated', handleJobUpdated);
+      window.addEventListener('jobRemoved', handleJobRemoved);
+    } catch (error) {
+      console.error('Error setting up socket listeners:', error);
+    }
+  }, [handleJobEvent, handleJobUpdated, handleJobRemoved]);
   
   // Cleanup socket listeners
-  const cleanupSocketListeners = () => {
+  const cleanupSocketListeners = useCallback(() => {
     try {
       // Remove event listeners
       window.removeEventListener('job-assigned', handleJobEvent);
@@ -130,15 +186,21 @@ const useJobSocket = ({ onSocketStatusChange }) => {
       window.removeEventListener('job-accepted', handleJobEvent);
       window.removeEventListener('job-rejected', handleJobEvent);
       window.removeEventListener('jobUpdated', handleJobUpdated);
+      window.removeEventListener('jobRemoved', handleJobRemoved);
+      window.removeEventListener('job-removed', handleJobRemoved); // Also remove any custom event
+      
+      // Reset the listeners setup flag
+      listenersSetupRef.current = false;
     } catch (error) {
       console.error('Error cleaning up socket listeners:', error);
     }
-  };
+  }, [handleJobEvent, handleJobUpdated, handleJobRemoved]);
 
   return {
     socketConnected,
     fetchInProgressRef,
-    handleJobUpdated
+    handleJobUpdated,
+    handleJobRemoved
   };
 };
 

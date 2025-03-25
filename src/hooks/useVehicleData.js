@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Papa from 'papaparse';
+import axios from 'axios';
 
 /**
  * Custom hook for fetching and managing vehicle data
@@ -16,6 +17,12 @@ const useVehicleData = () => {
     years: [],
     colors: ['Black', 'White', 'Silver', 'Red', 'Blue', 'Gray', 'Green', 'Brown', 'Yellow', 'Orange', 'Purple', 'Gold']
   });
+  
+  // State for fleet vehicles from the API
+  const [fleetVehicles, setFleetVehicles] = useState([]);
+  
+  // State for available vehicles (not assigned to any driver)
+  const [availableVehicles, setAvailableVehicles] = useState([]);
   
   // State for loading and error
   const [isLoading, setIsLoading] = useState(true);
@@ -34,12 +41,79 @@ const useVehicleData = () => {
     }));
   }, []);
   
-  // Load CSV data when component mounts
+  // Helper function to get auth headers
+  const getAuthHeader = () => {
+    const token = localStorage.getItem('token');
+    return { Authorization: `Bearer ${token}` };
+  };
+
+  // Function to fetch available vehicles
+  const fetchAvailableVehicles = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // Fetch available vehicles from the API
+      const response = await axios.get('/api/vehicles/available', {
+        headers: getAuthHeader()
+      });
+      
+      console.log('Fetched available vehicles from API:', response.data);
+      
+      // Store the available vehicles in state
+      setAvailableVehicles(response.data);
+      
+      setIsLoading(false);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching available vehicles:', error);
+      setError(error.message || 'Error fetching available vehicles');
+      setIsLoading(false);
+      return [];
+    }
+  };
+
+  // Load fleet vehicles from API when component mounts
   useEffect(() => {
-    const loadVehicleData = async () => {
+    const fetchFleetVehicles = async () => {
       setIsLoading(true);
       setError(null);
       
+      try {
+        // Fetch vehicles from the API
+        const response = await axios.get('/api/vehicles', {
+          headers: getAuthHeader()
+        });
+        
+        console.log('Fetched fleet vehicles from API:', response.data);
+        
+        // Store the vehicles in state
+        setFleetVehicles(response.data);
+        
+        // Also store in localStorage for components that might use it
+        localStorage.setItem('fleetVehicles', JSON.stringify(response.data));
+        
+        // Removed call to fetchAvailableVehicles() to prevent repeated calls
+        
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error fetching fleet vehicles:', error);
+        setError(error.message || 'Error fetching fleet vehicles');
+        setIsLoading(false);
+      }
+    };
+    
+    fetchFleetVehicles();
+  }, []);
+  
+  // Fetch available vehicles once when the component mounts
+  useEffect(() => {
+    fetchAvailableVehicles();
+  }, []);
+  
+  // Load CSV data for vehicle makes/models (used in vehicle creation form)
+  useEffect(() => {
+    const loadVehicleData = async () => {
       try {
         // Use the direct path to the file in the public folder
         const response = await fetch('/csvs/VehicleList.csv');
@@ -70,19 +144,13 @@ const useVehicleData = () => {
               years: prevData.years, // Keep the years we generated in the other useEffect
               colors: prevData.colors // Keep existing colors using prevData
             }));
-            
-            setIsLoading(false);
           },
           error: (error) => {
             console.error('Error parsing CSV:', error);
-            setError(error.message || 'Error parsing CSV');
-            setIsLoading(false);
           }
         });
       } catch (error) {
         console.error('Error loading CSV file:', error);
-        setError(error.message || 'Error loading CSV file');
-        setIsLoading(false);
       }
     };
   
@@ -91,6 +159,9 @@ const useVehicleData = () => {
 
   return {
     vehicleData,
+    fleetVehicles,
+    availableVehicles,
+    fetchAvailableVehicles,
     isLoading,
     error
   };

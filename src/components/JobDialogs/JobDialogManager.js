@@ -4,6 +4,8 @@ import DispatchDialog from './DispatchDialog';
 import RejectionDialog from './RejectionDialog';
 import CancelDialog from './CancelDialog';
 import GoaDialog from './GoaDialog';
+import EtaUpdateDialog from './EtaUpdateDialog';
+import UnsuccessfulDialog from './UnsuccessfulDialog';
 import * as jobActionHandlers from '../../utils/jobActionHandlers';
 
 /**
@@ -24,6 +26,10 @@ const JobDialogManager = ({
   setJobToCancel,
   jobToMarkGOA,
   setJobToMarkGOA,
+  jobToUpdateEta,
+  setJobToUpdateEta,
+  jobToMarkUnsuccessful,
+  setJobToMarkUnsuccessful,
   etaDialogOpen,
   setEtaDialogOpen,
   dispatchDialogOpen,
@@ -33,7 +39,11 @@ const JobDialogManager = ({
   cancelDialogOpen,
   setCancelDialogOpen,
   goaDialogOpen,
-  setGoaDialogOpen
+  setGoaDialogOpen,
+  etaUpdateDialogOpen,
+  setEtaUpdateDialogOpen,
+  unsuccessfulDialogOpen,
+  setUnsuccessfulDialogOpen
 }) => {
 
   // Handle ETA dialog submit
@@ -47,6 +57,18 @@ const JobDialogManager = ({
       setSelectedJob
     );
   };
+  
+  // Handle ETA update dialog submit
+  const handleEtaUpdateSave = async (additionalEtaValue) => {
+    await jobActionHandlers.handleEtaUpdateSave(
+      additionalEtaValue,
+      jobToUpdateEta,
+      setLoading,
+      refreshJobs,
+      setEtaUpdateDialogOpen,
+      setJobToUpdateEta
+    );
+  };
 
   // Handle driver assignment
   const handleAssign = async (driver, truck) => {
@@ -57,7 +79,8 @@ const JobDialogManager = ({
       setLoading, 
       refreshJobs,
       setDispatchDialogOpen,
-      setSelectedJob
+      setSelectedJob,
+      vehicles
     );
   };
 
@@ -94,6 +117,18 @@ const JobDialogManager = ({
       refreshJobs,
       setGoaDialogOpen,
       setJobToMarkGOA
+    );
+  };
+
+  // Handle Report Unsuccessful
+  const handleReportUnsuccessful = async (unsuccessfulReason) => {
+    await jobActionHandlers.handleReportUnsuccessful(
+      jobToMarkUnsuccessful,
+      unsuccessfulReason,
+      setLoading,
+      refreshJobs,
+      setUnsuccessfulDialogOpen,
+      setJobToMarkUnsuccessful
     );
   };
 
@@ -144,6 +179,23 @@ const JobDialogManager = ({
         onSubmit={handleGoaRequest}
         loading={loading}
       />
+      
+      {/* ETA Update Dialog */}
+      <EtaUpdateDialog 
+        open={etaUpdateDialogOpen} 
+        onClose={() => setEtaUpdateDialogOpen(false)} 
+        onSave={handleEtaUpdateSave}
+        loading={loading}
+        currentEta={jobToUpdateEta?.eta}
+      />
+      
+      {/* Unsuccessful Dialog */}
+      <UnsuccessfulDialog 
+        open={unsuccessfulDialogOpen} 
+        onClose={() => setUnsuccessfulDialogOpen(false)} 
+        onSubmit={handleReportUnsuccessful}
+        loading={loading}
+      />
     </>
   );
 };
@@ -160,12 +212,16 @@ export const useJobDialogs = () => {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [goaDialogOpen, setGoaDialogOpen] = useState(false);
+  const [etaUpdateDialogOpen, setEtaUpdateDialogOpen] = useState(false);
+  const [unsuccessfulDialogOpen, setUnsuccessfulDialogOpen] = useState(false);
   
   // State for selected job and related job-specific data
   const [selectedJob, setSelectedJob] = useState(null);
   const [jobToReject, setJobToReject] = useState(null);
   const [jobToCancel, setJobToCancel] = useState(null);
   const [jobToMarkGOA, setJobToMarkGOA] = useState(null);
+  const [jobToUpdateEta, setJobToUpdateEta] = useState(null);
+  const [jobToMarkUnsuccessful, setJobToMarkUnsuccessful] = useState(null);
   
   return {
     etaDialogOpen, setEtaDialogOpen,
@@ -173,9 +229,13 @@ export const useJobDialogs = () => {
     rejectDialogOpen, setRejectDialogOpen,
     cancelDialogOpen, setCancelDialogOpen,
     goaDialogOpen, setGoaDialogOpen,
+    etaUpdateDialogOpen, setEtaUpdateDialogOpen,
+    unsuccessfulDialogOpen, setUnsuccessfulDialogOpen,
     selectedJob, setSelectedJob,
     jobToReject, setJobToReject,
     jobToCancel, setJobToCancel,
-    jobToMarkGOA, setJobToMarkGOA
+    jobToMarkGOA, setJobToMarkGOA,
+    jobToUpdateEta, setJobToUpdateEta,
+    jobToMarkUnsuccessful, setJobToMarkUnsuccessful
   };
 };

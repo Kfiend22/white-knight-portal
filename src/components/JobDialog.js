@@ -35,6 +35,7 @@ import {
 import { 
   handleInputChange as handleInputChangeUtil, 
   handleNestedInputChange as handleNestedInputChangeUtil,
+  handleNotesInputChange,
   copyCustomerToPickup,
   validateJobData,
   formatJobDataForSubmission,
@@ -44,6 +45,7 @@ import {
 } from '../utils/dashboardUtils';
 import useLocationRequest from '../hooks/useLocationRequest';
 import useAvailableDrivers from '../hooks/useAvailableDrivers';
+import useUserProfile from '../hooks/useUserProfile';
 import { createJob, updateJob } from '../services/jobService';
 
 // Import sub-components
@@ -62,15 +64,22 @@ const JobDialog = ({
   onClose,
   isEditing,
   selectedJob,
-  userProfile,
-  userCompanies,
+  userProfile: propUserProfile,
+  userCompanies: propUserCompanies,
   vehicleData,
   onJobCreated,
   onJobUpdated,
   setNotification
 }) => {
+  // Get user profile data directly from the hook
+  const { userProfile, userCompanies, isLoading: userProfileLoading } = useUserProfile();
+  
+  // Use props or hook data (prefer hook data if available)
+  const effectiveUserProfile = userProfile || propUserProfile;
+  const effectiveUserCompanies = userCompanies.length > 0 ? userCompanies : propUserCompanies;
+  
   // State for job data
-  const [newJobData, setNewJobData] = useState({ ...defaultJobData });
+  const [newJobData, setNewJobData] = useState({ ...defaultJobData, account: '' });
   
   // State for job ID
   const [jobId, setJobId] = useState(generateJobId());
@@ -162,14 +171,26 @@ const JobDialog = ({
         setJobId(selectedJob.po || selectedJob.id);
       } else {
         // Set default job data for new job
+        console.log("JobDialog.js useEffect - effectiveUserProfile:", effectiveUserProfile);
+        console.log("JobDialog.js useEffect - effectiveUserCompanies:", effectiveUserCompanies);
+        
+        // Initialize with empty account first
         setNewJobData({
           ...defaultJobData,
-          account: userProfile?.companyName || 'White Knight Motor Club'
+          account: ''
         });
         setJobId(generateJobId());
+        
+        // Set account after user profile is loaded
+        if (!userProfileLoading && effectiveUserProfile) {
+          setNewJobData(prevData => ({
+            ...prevData,
+            account: 'White Knight Motor Club' // Always use the correct company name
+          }));
+        }
       }
     }
-  }, [open, isEditing, selectedJob, userProfile]);
+  }, [open, isEditing, selectedJob, effectiveUserProfile, effectiveUserCompanies, userProfileLoading]);
 
   // Update service location when location data is received
   useEffect(() => {
@@ -346,6 +367,12 @@ const JobDialog = ({
       return;
     }
     
+    // Debug log for notes before validation
+    console.log('JobDialog - Notes before update:');
+    console.log('- internalNotes:', newJobData.internalNotes);
+    console.log('- dispatcherNotes:', newJobData.dispatcherNotes);
+    console.log('- invoiceNotes:', newJobData.invoiceNotes);
+    
     // Validate job data
     const validation = validateJobData(newJobData);
     
@@ -427,16 +454,24 @@ const JobDialog = ({
         <Grid container spacing={2}>
           {/* Left Column */}
           <Grid item xs={12} md={6}>
+            {!userProfileLoading ? (
             <CustomerSection 
               jobData={newJobData}
               handleInputChange={handleInputChange}
-              userCompanies={userCompanies}
+              userCompanies={effectiveUserCompanies}
+              currentUser={effectiveUserProfile}
             />
+            ) : (
+              <Paper sx={{ p: 2, mb: 2, display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+                <CircularProgress />
+              </Paper>
+            )}
             
             <VehicleSection 
               jobData={newJobData}
               handleInputChange={handleInputChange}
               vehicleData={vehicleData}
+              fleetVehicles={fleetVehicles}
             />
             
             <ServiceSection 
@@ -444,6 +479,7 @@ const JobDialog = ({
               handleInputChange={handleInputChange}
               availableDrivers={availableDrivers}
               vehicles={fleetVehicles}
+              currentUser={effectiveUserProfile}
             />
           </Grid>
           
@@ -452,8 +488,10 @@ const JobDialog = ({
             <NotesSection 
               jobData={newJobData}
               handleInputChange={handleInputChange}
+              handleNotesInputChange={(noteType, value) => setNewJobData(prevData => handleNotesInputChange(prevData, noteType, value))}
               activeTab={activeNotesTab}
               handleTabChange={handleNotesTabChange}
+              userProfile={effectiveUserProfile}
             />
             
             <LocationSection 

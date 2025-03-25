@@ -162,10 +162,35 @@ const deleteVehicle = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Get all available vehicles (not assigned to any driver)
+ * @route GET /api/vehicles/available
+ * @access Private
+ */
+const getAvailableVehicles = asyncHandler(async (req, res) => {
+  try {
+    // Get current user's vendor ID for filtering
+    const vendorId = req.user.vendorId || req.user.vendorNumber;
+    
+    // Query vehicles belonging to this vendor and that are available
+    const vehicles = await Vehicle.find({ 
+      vendorId, 
+      isAvailable: true,
+      status: 'On Duty' // Only return vehicles that are on duty
+    });
+    
+    res.json(vehicles);
+  } catch (error) {
+    console.error('Error fetching available vehicles:', error);
+    res.status(500).json({ message: 'Error fetching available vehicles', error: error.message });
+  }
+});
+
 module.exports = {
   getVehicles,
   getVehicleById,
   createVehicle,
   updateVehicle,
-  deleteVehicle
+  deleteVehicle,
+  getAvailableVehicles
 };

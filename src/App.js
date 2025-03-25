@@ -9,30 +9,45 @@ import Settings from './pages/Settings';
 import ApplicationForm from './pages/ApplicationForm.js'
 import Submissions from './pages/Submissions';
 import Regions from './pages/Regions';
-import { isTokenExpired, verifyToken } from './utils/authUtils';
+import { isTokenExpired, verifyToken, logout, initializePermissions, canAccessPage } from './utils/authUtils';
 import { initSocket, disconnectSocket } from './utils/socket';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { NotificationProvider, useNotification, showGlobalNotification } from './context/NotificationContext';
 import { Snackbar, Alert } from '@mui/material';
 
-// Protected route component
-const ProtectedRoute = ({ element, allowedRoles = [] }) => {
+// Protected route component that uses the permission system
+const ProtectedRoute = ({ element, pageName }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userRole, setUserRole] = useState(null);
-  const [secondaryRoles, setSecondaryRoles] = useState({});
   const [loading, setLoading] = useState(true);
+  const [permissionsInitialized, setPermissionsInitialized] = useState(false);
 
   useEffect(() => {
     const checkAuthentication = async () => {
-      // Check if user is authenticated
-      const token = localStorage.getItem('token');
-      const userJson = localStorage.getItem('user');
+      // Check if user is authenticated - first try localStorage
+      let token = localStorage.getItem('token');
+      let userJson = localStorage.getItem('user');
+      
+      // If not in localStorage, check sessionStorage
+      if (!token) {
+        token = sessionStorage.getItem('backup_token');
+        userJson = sessionStorage.getItem('backup_user');
+        
+        // If found in sessionStorage, restore to localStorage for consistency
+        if (token) {
+          console.log('ProtectedRoute - Restoring token from sessionStorage backup');
+          localStorage.setItem('token', token);
+          
+          if (userJson) {
+            localStorage.setItem('user', userJson);
+          }
+        }
+      }
       
       console.log('ProtectedRoute - Token:', token ? 'exists' : 'missing');
       
       if (!token) {
-        console.log('ProtectedRoute - No token found');
+        console.log('ProtectedRoute - No token found in either storage location');
         setIsAuthenticated(false);
         setLoading(false);
         return;
@@ -41,8 +56,16 @@ const ProtectedRoute = ({ element, allowedRoles = [] }) => {
       // Check if token is expired
       if (isTokenExpired(token)) {
         console.log('ProtectedRoute - Token is expired');
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        
+        // Use the logout function to ensure consistent cleanup
+        const { logout } = require('./utils/authUtils');
+        
+        // Call logout but prevent the redirect
+        // We'll handle the redirect through the React Router
+        logout();
+        
+        // If logout didn't redirect (because we're already at /login), 
+        // we need to set authenticated state manually
         setIsAuthenticated(false);
         setLoading(false);
         return;
@@ -52,43 +75,23 @@ const ProtectedRoute = ({ element, allowedRoles = [] }) => {
       const isValid = await verifyToken();
       if (!isValid) {
         console.log('ProtectedRoute - Token verification failed');
+        // Clear all storage to prevent redirect loops
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('backup_token');
+        sessionStorage.removeItem('backup_user');
         setIsAuthenticated(false);
         setLoading(false);
         return;
       }
       
-      // If we have a valid token and user data, set authenticated
-      if (userJson) {
-        try {
-          const user = JSON.parse(userJson);
-          console.log('ProtectedRoute - Parsed user:', user);
-          
-          setIsAuthenticated(true);
-          
-          // Check for primaryRole first, then fall back to legacy role field
-          if (user.primaryRole || user.role) {
-            const effectiveRole = user.primaryRole || user.role;
-            console.log('ProtectedRoute - Setting user role:', effectiveRole);
-            setUserRole(effectiveRole);
-            
-            // Store secondary roles if available
-            if (user.secondaryRoles) {
-              console.log('ProtectedRoute - Setting secondary roles:', user.secondaryRoles);
-              setSecondaryRoles(user.secondaryRoles);
-            }
-          } else {
-            console.warn('ProtectedRoute - No role in user data');
-            // Set a default role to ensure basic access
-            setUserRole('SP'); // Service Provider as default
-          }
-        } catch (error) {
-          console.error('ProtectedRoute - Error parsing user data:', error);
-          setIsAuthenticated(false);
-        }
-      } else {
-        console.log('ProtectedRoute - No user data found');
-        setIsAuthenticated(false);
-      }
+      // If we have a valid token, we're authenticated regardless of user data
+      // This prevents redirect loops when token exists but user data is missing
+      setIsAuthenticated(true);
+      
+      // Initialize permissions if not already done
+      const permissions = initializePermissions();
+      setPermissionsInitialized(!!permissions);
       
       setLoading(false);
     };
@@ -96,33 +99,14 @@ const ProtectedRoute = ({ element, allowedRoles = [] }) => {
     checkAuthentication();
   }, []);
 
-  // Helper function to check if user has access to a route
-  const hasAccess = (roles) => {
-    // If no roles specified, everyone has access
-    if (!roles || roles.length === 0) return true;
-    
-    // Check if primary role has access
-    if (roles.includes(userRole)) return true;
-    
-    // For sOW users, always grant access to all pages
-    if (userRole === 'sOW') return true;
-    
-    // Check if any secondary role has access
-    if (secondaryRoles) {
-      for (const [role, hasRole] of Object.entries(secondaryRoles)) {
-        if (hasRole && roles.includes(role)) return true;
-      }
-    }
-    
-    return false;
-  };
+  // Determine the actual page name to check
+  const actualPageName = pageName || window.location.pathname.replace('/', '') || 'dashboard';
 
   console.log('ProtectedRoute - State:', { 
-    isAuthenticated, 
-    userRole,
-    secondaryRoles,
-    loading, 
-    allowedRoles 
+    isAuthenticated,
+    loading,
+    permissionsInitialized,
+    actualPageName
   });
 
   if (loading) {
@@ -135,13 +119,16 @@ const ProtectedRoute = ({ element, allowedRoles = [] }) => {
     return <Navigate to="/login" />;
   }
 
-  // If role check is required and user doesn't have the required role
-  if (allowedRoles.length > 0 && !hasAccess(allowedRoles)) {
-    console.log(`ProtectedRoute - User with role ${userRole} and secondary roles ${JSON.stringify(secondaryRoles)} does not have access to route with allowed roles:`, allowedRoles);
+  // Check if user has access to this page using the permission system
+  const hasAccess = canAccessPage(actualPageName);
+  
+  // If user doesn't have access to this page, redirect to dashboard
+  if (!hasAccess) {
+    console.log(`ProtectedRoute - User does not have access to ${actualPageName}`);
     return <Navigate to="/dashboard" />;
   }
 
-  // If authenticated and has the required role, render the component
+  // If authenticated and has access, render the component
   console.log('ProtectedRoute - Rendering component');
   return element;
 };
@@ -407,11 +394,19 @@ function App() {
   // State to track if socket is initialized
   const [socketInitialized, setSocketInitialized] = useState(false);
   
-  // Initialize socket connection when app loads or when token changes
+  // Initialize socket connection and permissions when app loads or when token changes
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
-      console.log('App: Initializing socket connection');
+      console.log('App: Initializing socket connection and permissions');
+      
+      // Initialize the permissions system
+      const permissionsData = initializePermissions();
+      if (permissionsData) {
+        console.log('App: Permissions initialized successfully');
+      } else {
+        console.log('App: No permissions data available');
+      }
       
       // Check if socket is already initialized to prevent duplicate connections
       try {
@@ -624,16 +619,14 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             
-            {/* Protected routes */}
-            <Route path="/dashboard" element={<ProtectedRoute element={<Dashboard />} />} />
-            <Route path="/payments" element={<ProtectedRoute element={<Payments />} />} />
-            <Route path="/performance" element={<ProtectedRoute element={<Performance />} />} />
-            <Route path="/settings" element={<ProtectedRoute element={<Settings />} />} />
-            <Route path="/applicationform" element={<ProtectedRoute element={<ApplicationForm />} />} />
-            <Route path="/submissions" element={<ProtectedRoute element={<Submissions />} allowedRoles={['OW', 'RM', 'sOW']} />} />
-            
-            {/* Owner-only routes */}
-            <Route path="/regions" element={<ProtectedRoute element={<Regions />} allowedRoles={['OW', 'sOW']} />} />
+            {/* Protected routes - use pageName for permission checks */}
+            <Route path="/dashboard" element={<ProtectedRoute element={<Dashboard />} pageName="dashboard" />} />
+            <Route path="/payments" element={<ProtectedRoute element={<Payments />} pageName="payments" />} />
+            <Route path="/performance" element={<ProtectedRoute element={<Performance />} pageName="performance" />} />
+            <Route path="/settings" element={<ProtectedRoute element={<Settings />} pageName="settings" />} />
+            <Route path="/applicationform" element={<ProtectedRoute element={<ApplicationForm />} pageName="applicationform" />} />
+            <Route path="/submissions" element={<ProtectedRoute element={<Submissions />} pageName="submissions" />} />
+            <Route path="/regions" element={<ProtectedRoute element={<Regions />} pageName="regions" />} />
           </Routes>
         </Router>
         

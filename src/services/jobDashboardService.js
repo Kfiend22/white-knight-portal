@@ -34,7 +34,7 @@ export const fetchCurrentUser = async () => {
 };
 
 // Fetch jobs based on category
-export const fetchJobs = async (jobCategory) => {
+export const fetchJobs = async (jobCategory, currentJobs = []) => {
   try {
     console.log(`Fetching jobs for category: ${jobCategory}`);
     
@@ -47,8 +47,12 @@ export const fetchJobs = async (jobCategory) => {
     
     // Process jobs to ensure they have the expanded property
     const processedJobs = response.data.map(job => {
+      // Find the job in current state if it exists
+      const existingJob = currentJobs.find(j => j.id === job.id);
+      
       // Preserve expanded state if the job already exists in our state
-      const expanded = false; // Initially collapsed
+      // Otherwise initialize as collapsed
+      const expanded = existingJob ? existingJob.expanded : false;
       
       let createdDisplay;
       
@@ -139,18 +143,20 @@ export const directAcceptJob = async (jobId) => {
 // Reject job with reason
 export const rejectJob = async (jobId, rejectionReason) => {
   try {
-    // Update job status on the server with rejection reason
-    // Change status back to 'Pending'
-    const response = await axios.put(`/api/jobs/${jobId}`, { 
-      status: 'Pending',
+    console.log(`Rejecting job ${jobId} with reason: ${rejectionReason}`);
+    
+    // Use the dedicated reject endpoint instead of the general status endpoint
+    const response = await axios.put(`/api/jobs/${jobId}/reject`, { 
       rejectionReason
     }, {
       headers: authHeader()
     });
     
+    console.log(`Job ${jobId} rejected successfully:`, response.data);
     return response.data;
   } catch (error) {
     console.error('Error rejecting job:', error);
+    console.error('Error details:', error.response?.data || error.message);
     throw error;
   }
 };
@@ -185,8 +191,8 @@ export const assignDriverAndTruck = async (jobId, driverId, truck, preserveAssig
 // Update job status
 export const updateJobStatus = async (jobId, status) => {
   try {
-    // Update job status on the server
-    const response = await axios.put(`/api/jobs/${jobId}`, {
+    // Update job status on the server using the dedicated status endpoint
+    const response = await axios.put(`/api/jobs/${jobId}/status`, {
       status
     }, {
       headers: authHeader()
@@ -202,8 +208,8 @@ export const updateJobStatus = async (jobId, status) => {
 // Cancel job with reason
 export const cancelJob = async (jobId, cancellationReason) => {
   try {
-    // Update job status on the server
-    const response = await axios.put(`/api/jobs/${jobId}`, {
+    // Update job status on the server using the dedicated status endpoint
+    const response = await axios.put(`/api/jobs/${jobId}/status`, {
       status: 'Canceled',
       cancellationReason
     }, {
@@ -220,8 +226,8 @@ export const cancelJob = async (jobId, cancellationReason) => {
 // Mark job as GOA with reason
 export const markJobAsGOA = async (jobId, goaReason) => {
   try {
-    // Update job status on the server
-    const response = await axios.put(`/api/jobs/${jobId}`, {
+    // Update job status on the server using the dedicated status endpoint
+    const response = await axios.put(`/api/jobs/${jobId}/status`, {
       status: 'Awaiting Approval',
       goaReason
     }, {
@@ -231,6 +237,158 @@ export const markJobAsGOA = async (jobId, goaReason) => {
     return response.data;
   } catch (error) {
     console.error('Error marking job as GOA:', error);
+    throw error;
+  }
+};
+
+// Report job as unsuccessful with reason
+export const reportJobUnsuccessful = async (jobId, unsuccessfulReason) => {
+  try {
+    // Use the dedicated unsuccessful endpoint
+    const response = await axios.put(`/api/jobs/${jobId}/unsuccessful`, {
+      unsuccessfulReason
+    }, {
+      headers: authHeader()
+    });
+    
+    console.log(`Job ${jobId} marked as unsuccessful with reason: ${unsuccessfulReason}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error marking job as unsuccessful:', error);
+    throw error;
+  }
+};
+
+// Approve unsuccessful request
+export const approveUnsuccessfulJob = async (jobId) => {
+  try {
+    // Use the dedicated approve unsuccessful endpoint
+    const response = await axios.put(`/api/jobs/${jobId}/unsuccessful/approve`, {}, {
+      headers: authHeader()
+    });
+    
+    console.log(`Unsuccessful request for job ${jobId} approved successfully`);
+    return response.data;
+  } catch (error) {
+    console.error('Error approving unsuccessful request:', error);
+    throw error;
+  }
+};
+
+// Deny unsuccessful request
+export const denyUnsuccessfulJob = async (jobId) => {
+  try {
+    // Use the dedicated deny unsuccessful endpoint
+    const response = await axios.put(`/api/jobs/${jobId}/unsuccessful/deny`, {}, {
+      headers: authHeader()
+    });
+    
+    console.log(`Unsuccessful request for job ${jobId} denied successfully`);
+    return response.data;
+  } catch (error) {
+    console.error('Error denying unsuccessful request:', error);
+    throw error;
+  }
+};
+
+// Approve GOA request
+export const approveGOA = async (jobId) => {
+  try {
+    // Use the dedicated approve GOA endpoint
+    const response = await axios.put(`/api/jobs/${jobId}/goa/approve`, {}, {
+      headers: authHeader()
+    });
+    
+    console.log(`GOA request for job ${jobId} approved successfully`);
+    return response.data;
+  } catch (error) {
+    console.error('Error approving GOA request:', error);
+    throw error;
+  }
+};
+
+// Deny GOA request
+export const denyGOA = async (jobId) => {
+  try {
+    // Use the dedicated deny GOA endpoint
+    const response = await axios.put(`/api/jobs/${jobId}/goa/deny`, {}, {
+      headers: authHeader()
+    });
+    
+    console.log(`GOA request for job ${jobId} denied successfully`);
+    return response.data;
+  } catch (error) {
+    console.error('Error denying GOA request:', error);
+    throw error;
+  }
+};
+
+// Update job ETA
+export const updateETA = async (jobId, newEtaValue) => {
+  try {
+    // Update job ETA on the server using the main endpoint
+    // We use the main endpoint here because ETA is a job detail, not a status
+    const response = await axios.put(`/api/jobs/${jobId}`, {
+      eta: newEtaValue
+    }, {
+      headers: authHeader()
+    });
+    
+    console.log(`Updated ETA for job ${jobId} to ${newEtaValue} minutes`);
+    return response.data;
+  } catch (error) {
+    console.error('Error updating job ETA:', error);
+    throw error;
+  }
+};
+
+// Update job ETA only (using dedicated endpoint)
+export const updateJobETA = async (jobId, newEtaValue) => {
+  try {
+    // Update job ETA on the server using the dedicated ETA endpoint
+    // This endpoint only updates the ETA and doesn't trigger re-acceptance
+    const response = await axios.put(`/api/jobs/${jobId}/eta`, {
+      eta: newEtaValue
+    }, {
+      headers: authHeader()
+    });
+    
+    console.log(`Updated ETA for job ${jobId} to ${newEtaValue} minutes using dedicated endpoint`);
+    return response.data;
+  } catch (error) {
+    console.error('Error updating job ETA:', error);
+    throw error;
+  }
+};
+
+// Delete job permanently
+export const deleteJob = async (jobId) => {
+  try {
+    // Delete job on the server
+    const response = await axios.delete(`/api/jobs/${jobId}`, {
+      headers: authHeader()
+    });
+    
+    console.log(`Job ${jobId} deleted successfully:`, response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting job:', error);
+    throw error;
+  }
+};
+
+// Duplicate job
+export const duplicateJob = async (jobId) => {
+  try {
+    // Duplicate job on the server
+    const response = await axios.post(`/api/jobs/${jobId}/duplicate`, {}, {
+      headers: authHeader()
+    });
+    
+    console.log(`Job ${jobId} duplicated successfully:`, response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Error duplicating job:', error);
     throw error;
   }
 };
@@ -272,8 +430,16 @@ export const processJobUpdate = (updatedJob, existingJobs) => {
     created: createdDisplay
   };
   
-  // Update the jobs by replacing the updated job or adding it if it's new
-  return existingJobs.map(job => 
-    job.id === updatedJob.id ? processedJob : job
-  );
+  // Check if the job already exists in the array
+  const jobExists = existingJobs.some(job => job.id === updatedJob.id);
+  
+  if (jobExists) {
+    // Update the existing job
+    return existingJobs.map(job => 
+      job.id === updatedJob.id ? processedJob : job
+    );
+  } else {
+    // Add the new job to the array
+    return [...existingJobs, processedJob];
+  }
 };

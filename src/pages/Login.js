@@ -3,6 +3,7 @@ import { TextField, Button, Link, Typography, Container, Box, Alert, FormControl
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import ChangePasswordDialog from '../components/ChangePasswordDialog';
+import { isTokenExpired } from '../utils/authUtils';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -15,19 +16,47 @@ const Login = () => {
 
   // Check if user is already logged in
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    console.log('Login useEffect: Checking for existing token');
+    
+    // Check localStorage first
+    let token = localStorage.getItem('token');
+    let userJson = localStorage.getItem('user');
+    
+    // If not in localStorage, check sessionStorage
+    if (!token) {
+      token = sessionStorage.getItem('backup_token');
+      userJson = sessionStorage.getItem('backup_user');
+      console.log('Login useEffect: Backup token exists in sessionStorage?', !!token);
+    } else {
+      console.log('Login useEffect: Token exists in localStorage');
+    }
+    
     if (token) {
       // Check if token is valid before redirecting
-      import('../utils/authUtils').then(({ isTokenExpired }) => {
-        if (!isTokenExpired(token)) {
-          navigate('/dashboard');
-        } else {
-          // Clear invalid token
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          setLoginError('Your session has expired. Please log in again.');
+      if (!isTokenExpired(token)) {
+        console.log('Login useEffect: Token is valid, redirecting to dashboard');
+        
+        // If token was found in sessionStorage but not localStorage, restore it
+        if (!localStorage.getItem('token') && sessionStorage.getItem('backup_token')) {
+          localStorage.setItem('token', sessionStorage.getItem('backup_token'));
+          
+          if (userJson) {
+            localStorage.setItem('user', userJson);
+          }
         }
-      });
+        
+        navigate('/dashboard');
+      } else {
+        console.log('Login useEffect: Token is expired, clearing storage');
+        // Clear invalid token from both storage locations
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('backup_token');
+        sessionStorage.removeItem('backup_user');
+        setLoginError('Your session has expired. Please log in again.');
+      }
+    } else {
+      console.log('Login useEffect: No token found in either storage location');
     }
   }, [navigate]);
 
@@ -54,35 +83,67 @@ const Login = () => {
       setLoginError('');
       
       try {
+        console.log('Login handleSubmit: Submitting login request');
         const response = await axios.post('/api/auth/login', {
           username: formData.username,
           password: formData.password,
           rememberMe: rememberMe
         });
         
-        // Store token in localStorage
-        localStorage.setItem('token', response.data.token);
+        console.log('Login handleSubmit: Login successful, storing token');
         
-        // Store user info
-        const userData = {
-          _id: response.data._id,
-          username: response.data.username,
-          email: response.data.email,
-          // Store both primaryRole and legacy role for backward compatibility
-          primaryRole: response.data.primaryRole || response.data.role,
-          role: response.data.role || response.data.primaryRole
-        };
-        localStorage.setItem('user', JSON.stringify(userData));
-        
-        // Debug log
-        console.log('User data stored in localStorage:', userData);
-        
-        console.log('Login successful:', response.data);
+        // Check if localStorage is working
+        try {
+          // Store token in localStorage
+          localStorage.setItem('token', response.data.token);
+          
+          // Verify it was stored correctly
+          const storedToken = localStorage.getItem('token');
+          console.log('Login handleSubmit: Token stored successfully?', !!storedToken, 
+                      'Length:', storedToken ? storedToken.length : 0);
+          
+          // Store user info
+          const userData = {
+            _id: response.data._id,
+            username: response.data.username,
+            email: response.data.email,
+            // Store both primaryRole and legacy role for backward compatibility
+            primaryRole: response.data.primaryRole || response.data.role,
+            role: response.data.role || response.data.primaryRole,
+            // Ensure secondaryRoles is always stored as an array
+            secondaryRoles: Array.isArray(response.data.secondaryRoles) 
+              ? response.data.secondaryRoles 
+              : (response.data.secondaryRoles && typeof response.data.secondaryRoles === 'object')
+                ? Object.keys(response.data.secondaryRoles).filter(role => response.data.secondaryRoles[role])
+                : []
+          };
+          
+          console.log('Login handleSubmit: Storing user data with secondaryRoles:', 
+                      userData.secondaryRoles, 
+                      'isArray:', Array.isArray(userData.secondaryRoles));
+          localStorage.setItem('user', JSON.stringify(userData));
+          
+          // Verify user data was stored
+          const storedUser = localStorage.getItem('user');
+          console.log('Login handleSubmit: User data stored successfully?', !!storedUser);
+          
+          // Also store in sessionStorage as backup
+          sessionStorage.setItem('backup_token', response.data.token);
+          sessionStorage.setItem('backup_user', JSON.stringify(userData));
+        } catch (storageError) {
+          console.error('Login handleSubmit: Error storing data in localStorage:', storageError);
+        }
         
         // Check if password change is required
         if (response.data.isFirstLogin) {
           setShowChangePasswordDialog(true);
         } else {
+          // Refresh user data in useJobData if available
+          if (window.refreshUserFromJobData && typeof window.refreshUserFromJobData === 'function') {
+            console.log('Login: Refreshing user data in useJobData after login');
+            window.refreshUserFromJobData();
+          }
+          
           // Redirect to dashboard
           navigate('/dashboard');
         }

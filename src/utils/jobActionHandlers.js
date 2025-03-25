@@ -1,4 +1,6 @@
 import * as jobService from '../services/jobDashboardService';
+import { isDriverOnlyUser, trackAssignedJob } from './jobUtils';
+import { canChangeJobStatus, getUserPermissions } from './authUtils';
 
 /**
  * Handlers for job actions (accept, reject, dispatch, etc.)
@@ -26,6 +28,12 @@ export const handleDirectAccept = async (job, setLoading, refreshJobs) => {
     // Accept the job with the existing ETA
     await jobService.directAcceptJob(job.id);
     
+    // Also track this in localStorage for persistence
+    const currentUser = JSON.parse(localStorage.getItem('userInfo') || '{}');
+    if (currentUser && currentUser.id) {
+      trackAssignedJob(job.id, currentUser.id);
+    }
+    
     // Refresh the jobs list
     refreshJobs();
     
@@ -44,6 +52,12 @@ export const handleEtaDialogSave = async (etaValue, selectedJob, setLoading, ref
   try {
     // Use the jobService to accept the job with the selected ETA
     await jobService.acceptJob(selectedJob.id, etaValue);
+    
+    // Also track this in localStorage for persistence
+    const currentUser = JSON.parse(localStorage.getItem('userInfo') || '{}');
+    if (currentUser && currentUser.id) {
+      trackAssignedJob(selectedJob.id, currentUser.id);
+    }
     
     // Refresh jobs to get the updated data
     refreshJobs();
@@ -111,7 +125,7 @@ export const handleDispatchJob = (job, setSelectedJob, setDispatchDialogOpen) =>
 };
 
 // Assign driver and truck to job
-export const handleAssignDriverAndTruck = async (driver, truck, selectedJob, setLoading, refreshJobs, setDispatchDialogOpen, setSelectedJob) => {
+export const handleAssignDriverAndTruck = async (driver, truck, selectedJob, setLoading, refreshJobs, setDispatchDialogOpen, setSelectedJob, vehicles = []) => {
   setLoading(true);
   
   try {
@@ -123,18 +137,45 @@ export const handleAssignDriverAndTruck = async (driver, truck, selectedJob, set
     const preserveAssignedAt = isRedispatch;
     const originalAssignedAt = selectedJob.firstAssignedAt || selectedJob.assignedAt;
     
+    // Check if truck is an ObjectId (24 hex characters) and convert to a readable name if possible
+    let truckName = truck;
+    
+    // Check if truck looks like an ObjectId (24 hex characters)
+    if (typeof truck === 'string' && /^[0-9a-f]{24}$/i.test(truck)) {
+      // Find the vehicle in the vehicles array
+      const vehicle = vehicles.find(v => v._id === truck);
+      
+      if (vehicle) {
+        // Construct a readable name from the vehicle properties
+        if (vehicle.name) {
+          truckName = vehicle.name;
+        } else if (vehicle.year && vehicle.make && vehicle.model) {
+          truckName = `${vehicle.year} ${vehicle.make} ${vehicle.model}`;
+        } else if (vehicle.make && vehicle.model) {
+          truckName = `${vehicle.make} ${vehicle.model}`;
+        } else if (vehicle.identifier) {
+          truckName = vehicle.identifier;
+        }
+        // If none of the above, keep the original truck value
+      }
+    }
+    
     console.log(isRedispatch ? 'Redispatching job' : 'First-time dispatch for job:', {
       jobId: selectedJob.id,
       driverId: driver.id,
       driverName: driver.name,
-      truck,
+      originalTruck: truck,
+      truckName,
       preserveAssignedAt,
       originalAssignedAt,
       isRedispatch
     });
     
-    // Use the jobService to assign the driver and truck
-    await jobService.assignDriverAndTruck(selectedJob.id, driver.id, truck, preserveAssignedAt, originalAssignedAt);
+    // Use the jobService to assign the driver and truck (using the readable name)
+    await jobService.assignDriverAndTruck(selectedJob.id, driver.id, truckName, preserveAssignedAt, originalAssignedAt);
+    
+    // Track this assignment in localStorage for persistence across refreshes
+    trackAssignedJob(selectedJob.id, driver.id);
     
     // Refresh jobs and close dialog
     refreshJobs();
@@ -183,14 +224,41 @@ export const handleJobStatusChange = async (
       jobCategory
     });
 
-    // Check for user role restrictions ONLY for 'N/A' users who are not Dispatchers or Answering Service
-    if (currentUser?.primaryRole === 'N/A' && 
-        !(currentUser?.secondaryRoles?.dispatcher || currentUser?.secondaryRoles?.answeringService)) {
-      if (getStatusPriority(status) < getStatusPriority(oldStatus)) {
-        alert('Drivers with role N/A cannot lower the job status.');
-        setLoading(false);
-        return;
+    // Log currentUser for debugging
+    console.log('currentUser in handleJobStatusChange:', currentUser);
+    
+    // Check if the user is a driver-only user
+    const isDriverOnly = isDriverOnlyUser(currentUser);
+    
+    // Check if the user is a N/A role user
+    const isNARole = currentUser?.primaryRole === 'N/A';
+    
+    // Check if status change is allowed using only the permission system
+    const isStatusChangeAllowed = canChangeJobStatus(oldStatus, status);
+    
+    // If the status change is not allowed, display an error and return
+    if (!isStatusChangeAllowed) {
+      // Get permissions for detailed logging
+      const permissions = getUserPermissions();
+      console.log('User permissions for job status change:', permissions);
+      
+      // Get allowed progressions from permissions
+      const allowedProgressions = permissions?.allowedJobProgressions || {};
+      const allowedNextStatuses = allowedProgressions[oldStatus] || [];
+      
+      console.log(`Status change rejected: ${oldStatus} -> ${status}`);
+      console.log(`Allowed next statuses from permission system: ${allowedNextStatuses.join(', ')}`);
+      
+      if (allowedNextStatuses.length > 0) {
+        alert(`You can only change from ${oldStatus} to ${allowedNextStatuses.join(' or ')}.`);
+      } else if (jobCategory === 'completed' || jobCategory === 'canceled') {
+        alert('You cannot change the status of completed or canceled jobs.');
+      } else {
+        alert(`You do not have permission to change this job's status from ${oldStatus} to ${status}.`);
       }
+      
+      setLoading(false);
+      return;
     }
 
     // Check if this is a previously rejected job being dispatched
@@ -229,11 +297,26 @@ export const handleJobStatusChange = async (
 
 // Expand/collapse job details
 export const handleExpandClick = (jobId, setJobs) => {
-  setJobs((prevJobs) =>
-    prevJobs.map((job) =>
+  console.log(`Expand button clicked for job ${jobId}`);
+  
+  setJobs((prevJobs) => {
+    // Find the job to verify its current expanded state
+    const targetJob = prevJobs.find(job => job.id === jobId);
+    const currentExpandedState = targetJob?.expanded || false;
+    
+    console.log(`Current expanded state for job ${jobId}: ${currentExpandedState}`);
+    console.log(`Setting expanded state to: ${!currentExpandedState}`);
+    
+    const updatedJobs = prevJobs.map((job) =>
       job.id === jobId ? { ...job, expanded: !job.expanded } : job
-    )
-  );
+    );
+    
+    // Verify state after update
+    const updatedJob = updatedJobs.find(job => job.id === jobId);
+    console.log(`Updated expanded state for job ${jobId}: ${updatedJob?.expanded}`);
+    
+    return updatedJobs;
+  });
 };
 
 // Handle cancel job
@@ -268,11 +351,20 @@ export const handleCancelJob = async (jobToCancel, cancellationReason, setLoadin
 };
 
 // Handle GOA request
-export const handleGoaRequest = async (jobToMarkGOA, goaReason, setLoading, refreshJobs, setGoaDialogOpen, setJobToMarkGOA) => {
+export const handleGoaRequest = async (jobToMarkGOA, goaReason, setLoading, refreshJobs, setGoaDialogOpen, setJobToMarkGOA, currentUser) => {
   if (!jobToMarkGOA) {
     console.error('No job selected for GOA');
     alert('Error: No job selected for GOA');
     setGoaDialogOpen(false);
+    return;
+  }
+
+  // Check if the user is a driver-only user
+  if (isDriverOnlyUser(currentUser)) {
+    console.log('Driver-only user attempted to mark job as GOA');
+    alert('Drivers cannot mark jobs as GOA.');
+    setGoaDialogOpen(false);
+    setJobToMarkGOA(null);
     return;
   }
 
@@ -298,15 +390,202 @@ export const handleGoaRequest = async (jobToMarkGOA, goaReason, setLoading, refr
   }
 };
 
+// Handle Report Unsuccessful
+export const handleReportUnsuccessful = async (jobToMarkUnsuccessful, unsuccessfulReason, setLoading, refreshJobs, setUnsuccessfulDialogOpen, setJobToMarkUnsuccessful, currentUser) => {
+  if (!jobToMarkUnsuccessful) {
+    console.error('No job selected for marking as unsuccessful');
+    alert('Error: No job selected for marking as unsuccessful');
+    setUnsuccessfulDialogOpen(false);
+    return;
+  }
+
+  // Check if the user is a driver-only user
+  if (isDriverOnlyUser(currentUser)) {
+    console.log('Driver-only user attempted to mark job as unsuccessful');
+    alert('Drivers cannot report jobs as unsuccessful.');
+    setUnsuccessfulDialogOpen(false);
+    setJobToMarkUnsuccessful(null);
+    return;
+  }
+
+  // Store the job ID in a local variable
+  const jobId = jobToMarkUnsuccessful.id;
+  
+  setLoading(true);
+  
+  try {
+    // Use the jobService to mark the job as unsuccessful (now requires approval)
+    await jobService.reportJobUnsuccessful(jobId, unsuccessfulReason);
+    
+    // Close dialog and refresh jobs
+    setUnsuccessfulDialogOpen(false);
+    setJobToMarkUnsuccessful(null);
+    refreshJobs();
+    
+    // Show a message to the user that the request is pending approval
+    alert('Unsuccessful request submitted and awaiting approval.');
+    
+  } catch (error) {
+    console.error('Error marking job as unsuccessful:', error);
+    alert('Failed to mark job as unsuccessful. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Handle Approve Unsuccessful
+export const handleApproveUnsuccessful = async (jobId, setLoading, refreshJobs) => {
+  setLoading(true);
+  
+  try {
+    // Use the jobService to approve the unsuccessful request
+    await jobService.approveUnsuccessfulJob(jobId);
+    
+    // Refresh jobs to show the updated status
+    refreshJobs();
+    
+    // Show a success message
+    alert('Unsuccessful request approved successfully.');
+    
+  } catch (error) {
+    console.error('Error approving unsuccessful request:', error);
+    alert(`Error approving unsuccessful request: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Handle Deny Unsuccessful
+export const handleDenyUnsuccessful = async (jobId, setLoading, refreshJobs) => {
+  setLoading(true);
+  
+  try {
+    // Use the jobService to deny the unsuccessful request
+    await jobService.denyUnsuccessfulJob(jobId);
+    
+    // Refresh jobs to show the updated status
+    refreshJobs();
+    
+    // Show a success message
+    alert('Unsuccessful request denied. Job has been marked as canceled.');
+    
+  } catch (error) {
+    console.error('Error denying unsuccessful request:', error);
+    alert(`Error denying unsuccessful request: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Handle Approve GOA
+export const handleApproveGOA = async (jobId, setLoading, refreshJobs) => {
+  setLoading(true);
+  
+  try {
+    // Use the jobService to approve the GOA request
+    await jobService.approveGOA(jobId);
+    
+    // Refresh jobs to show the updated status
+    refreshJobs();
+    
+    // Show a success message
+    alert('GOA request approved successfully.');
+    
+  } catch (error) {
+    console.error('Error approving GOA request:', error);
+    alert(`Error approving GOA request: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Handle Deny GOA
+export const handleDenyGOA = async (jobId, setLoading, refreshJobs) => {
+  setLoading(true);
+  
+  try {
+    // Use the jobService to deny the GOA request
+    await jobService.denyGOA(jobId);
+    
+    // Refresh jobs to show the updated status
+    refreshJobs();
+    
+    // Show a success message
+    alert('GOA request denied successfully.');
+    
+  } catch (error) {
+    console.error('Error denying GOA request:', error);
+    alert(`Error denying GOA request: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Handle ETA update
+export const handleEtaUpdateSave = async (additionalEtaValue, jobToUpdateEta, setLoading, refreshJobs, setEtaUpdateDialogOpen, setJobToUpdateEta, currentUser) => {
+  if (!jobToUpdateEta) {
+    console.error('No job selected for ETA update');
+    alert('Error: No job selected for ETA update');
+    setEtaUpdateDialogOpen(false);
+    return;
+  }
+
+  // Check if the user is a driver-only user
+  if (isDriverOnlyUser(currentUser)) {
+    console.log('Driver-only user attempted to update ETA');
+    alert('Drivers cannot update ETAs on jobs.');
+    setEtaUpdateDialogOpen(false);
+    setJobToUpdateEta(null);
+    return;
+  }
+
+  // Store the job ID in a local variable
+  const jobId = jobToUpdateEta.id;
+  
+  // Get the current ETA value (as a number)
+  const currentEta = parseInt(jobToUpdateEta.eta) || 0;
+  
+  // Calculate the new ETA by adding the additional time
+  const newEta = currentEta + parseInt(additionalEtaValue);
+  
+  console.log(`Updating ETA for job ${jobId}: ${currentEta} + ${additionalEtaValue} = ${newEta} minutes`);
+  
+  setLoading(true);
+  
+  try {
+    // Use the dedicated ETA update endpoint to update only the ETA
+    // This won't trigger re-acceptance or change any other job details
+    await jobService.updateJobETA(jobId, newEta.toString());
+    
+    // Close dialog and refresh jobs
+    setEtaUpdateDialogOpen(false);
+    setJobToUpdateEta(null);
+    refreshJobs();
+    
+  } catch (error) {
+    console.error('Error updating job ETA:', error);
+    alert('Failed to update job ETA. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+};
+
 // Handle menu actions
-export const handleMenuAction = (
+export const handleMenuAction = async (
   action, 
   job, 
   setJobToCancel,
   setCancelDialogOpen,
   setJobToMarkGOA,
   setGoaDialogOpen,
-  handleDispatchJob
+  setJobToUpdateEta,
+  setEtaUpdateDialogOpen,
+  setJobToMarkUnsuccessful,
+  setUnsuccessfulDialogOpen,
+  handleDispatchJob,
+  refreshJobs,
+  setLoading,
+  currentUser
 ) => {
   // If job is provided directly (e.g., from the Rejected status button), use it
   // Otherwise use the selectedJobForMenu from the menu context
@@ -317,7 +596,43 @@ export const handleMenuAction = (
     return;
   }
   
+  // Check if the user is a driver-only user
+  const isDriverOnly = isDriverOnlyUser(currentUser);
+  
+  // Restricted actions for driver-only users
+  const driverRestrictedActions = ['goa', 'updateEta', 'unsuccessful', 'reassign'];
+  
+  if (isDriverOnly && driverRestrictedActions.includes(action)) {
+    console.log(`Driver-only user attempted restricted action: ${action}`);
+    alert(`Drivers cannot perform this action: ${action}`);
+    return;
+  }
+  
+  // Additional check for completed/canceled jobs for driver-only users
+  if (isDriverOnly && action === 'cancel' && 
+      (targetJob.status === 'Completed' || targetJob.status === 'Canceled' || 
+       targetJob.status === 'GOA' || targetJob.status === 'Unsuccessful')) {
+    alert('Drivers cannot cancel completed or canceled jobs.');
+    return;
+  }
+  
   switch (action) {
+    case 'approveUnsuccessful':
+      // Handle approving unsuccessful request
+      await handleApproveUnsuccessful(targetJob.id, setLoading, refreshJobs);
+      break;
+    case 'denyUnsuccessful':
+      // Handle denying unsuccessful request
+      await handleDenyUnsuccessful(targetJob.id, setLoading, refreshJobs);
+      break;
+    case 'approveGOA':
+      // Handle approving GOA request
+      await handleApproveGOA(targetJob.id, setLoading, refreshJobs);
+      break;
+    case 'denyGOA':
+      // Handle denying GOA request
+      await handleDenyGOA(targetJob.id, setLoading, refreshJobs);
+      break;
     case 'cancel':
       // Only allow canceling if the job is NOT completed
       if (targetJob.status !== 'Completed') {
@@ -333,17 +648,30 @@ export const handleMenuAction = (
       setJobToMarkGOA(targetJob);
       setGoaDialogOpen(true);
       break;
+    case 'updateEta':
+      // Store the job in a dedicated state variable for ETA update
+      setJobToUpdateEta(targetJob);
+      setEtaUpdateDialogOpen(true);
+      break;
     case 'unsuccessful':
-      // Implement report unsuccessful logic
-      alert('Report Unsuccessful feature coming soon');
+      // Store the job in a dedicated state variable for marking as unsuccessful
+      setJobToMarkUnsuccessful(targetJob);
+      setUnsuccessfulDialogOpen(true);
       break;
     case 'email':
       // Implement email job details logic
       alert('Email Job Details feature coming soon');
       break;
     case 'duplicate':
-      // Implement duplicate job logic
-      alert('Duplicate Job feature coming soon');
+      try {
+        await jobService.duplicateJob(targetJob.id);
+        // Refresh the jobs list to show the new duplicated job
+        refreshJobs();
+        alert('Job duplicated successfully!');
+      } catch (error) {
+        console.error('Error duplicating job:', error);
+        alert('Failed to duplicate job. Please try again.');
+      }
       break;
     case 'reassign':
       // Use the existing dispatch dialog to reassign the driver

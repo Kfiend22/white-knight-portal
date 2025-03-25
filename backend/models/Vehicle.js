@@ -41,6 +41,12 @@ const vehicleSchema = mongoose.Schema({
     enum: ['On Duty', 'Off Duty', 'Maintenance', 'Out of Service']
   },
   
+  // Availability for assignment
+  isAvailable: {
+    type: Boolean,
+    default: true
+  },
+  
   // Location data for map tracking
   lat: {
     type: Number,

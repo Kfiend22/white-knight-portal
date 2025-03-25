@@ -97,15 +97,14 @@ function SideMenu() {
   };
   
   const handleConfirmLogout = () => {
-    // Remove token and user data from localStorage
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    
     // Close the logout dialog
     setOpenLogoutDialog(false);
     
-    // Navigate to login page
-    navigate('/login');
+    // Import and use the logout function from authUtils
+    const { logout } = require('../utils/authUtils');
+    logout();
+    
+    // Note: We don't need to navigate here since logout() will redirect
   };
 
   const handleEditProfile = () => {
@@ -223,14 +222,20 @@ function SideMenu() {
     // Check if primary role has access
     if (itemRoles.includes(userRole)) return true;
     
+    // For sOW users, always grant access to all pages
+    if (userRole === 'sOW') return true;
+    
     // Check if any secondary role has access
     if (secondaryRoles) {
-      // For sOW users, always grant access to all pages
-      if (userRole === 'sOW') return true;
-      
-      // Check each secondary role
-      for (const [role, hasRole] of Object.entries(secondaryRoles)) {
-        if (hasRole && itemRoles.includes(role)) return true;
+      // If secondaryRoles is an array, check if any role is included
+      if (Array.isArray(secondaryRoles)) {
+        return secondaryRoles.some(role => itemRoles.includes(role));
+      } 
+      // If secondaryRoles is an object, check if any role is true
+      else if (typeof secondaryRoles === 'object') {
+        for (const [role, hasRole] of Object.entries(secondaryRoles)) {
+          if (hasRole && itemRoles.includes(role)) return true;
+        }
       }
     }
     
@@ -304,10 +309,15 @@ function SideMenu() {
           >
             <MenuItem onClick={handleEditProfile}>Edit Profile</MenuItem>
             <MenuItem onClick={handleUpdateTaxInfo}>Update Tax Info</MenuItem>
-            <MenuItem onClick={handleUploadCOI}>Upload COI</MenuItem>
-            <MenuItem onClick={handleUploadBackgroundChecks}>
-              Upload Background Checks
-            </MenuItem>
+            {/* Only show Upload COI and Upload Background Checks for OW, sOW, RM, and SP roles */}
+            {['OW', 'sOW', 'RM', 'SP'].includes(userRole) && (
+              <>
+                <MenuItem onClick={handleUploadCOI}>Upload COI</MenuItem>
+                <MenuItem onClick={handleUploadBackgroundChecks}>
+                  Upload Background Checks
+                </MenuItem>
+              </>
+            )}
             <MenuItem onClick={handleLogout}>
               Log Out
             </MenuItem>

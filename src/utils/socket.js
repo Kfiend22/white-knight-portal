@@ -387,6 +387,20 @@ export const getSocket = () => socket;
 
 export const disconnectSocket = () => {
   if (socket) {
+    console.log('Explicitly disconnecting socket:', socket.id);
     socket.disconnect();
+    socket = null; // Clear the socket reference
+    
+    // Clear any socket-related data from storage
+    sessionStorage.removeItem('socketEvents');
+    sessionStorage.removeItem('showNotification');
+    sessionStorage.removeItem('pendingNotificationSound');
+    
+    // Remove socket ID from window
+    if (window.socketId) {
+      delete window.socketId;
+    }
+    
+    console.log('Socket disconnected and cleaned up');
   }
 };

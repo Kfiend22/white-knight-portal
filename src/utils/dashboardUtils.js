@@ -24,6 +24,20 @@ export const handleInputChange = (prevData, field, value) => {
 };
 
 /**
+ * Handle notes input change for a specific note type
+ * @param {Object} prevData Previous data
+ * @param {string} noteType Type of note ('internal', 'dispatcher', 'invoice')
+ * @param {string} value New note value
+ * @returns {Object} Updated data
+ */
+export const handleNotesInputChange = (prevData, noteType, value) => {
+  return {
+    ...prevData,
+    [`${noteType}Notes`]: value
+  };
+};
+
+/**
  * Handle nested input change for a field
  * @param {Object} prevData Previous data
  * @param {string} parent Parent object
@@ -112,8 +126,17 @@ export const validateJobData = (jobData) => {
  */
 export const formatJobDataForSubmission = (jobData, availableDrivers) => {
   // Format the ETA based on service time
-  const etaFormatted = jobData.serviceTime === 'Scheduled' ? 
-    `Scheduled for ${jobData.scheduledDate} ${jobData.scheduledTime}` : jobData.eta;
+  let etaFormatted;
+  if (jobData.serviceTime === 'Scheduled') {
+    if (jobData.scheduledTime === 'Custom Date/Time' && jobData.customTime) {
+      // Include the custom time if available
+      etaFormatted = `Scheduled for ${jobData.scheduledDate} ${jobData.customTime}`;
+    } else {
+      etaFormatted = `Scheduled for ${jobData.scheduledDate} ${jobData.scheduledTime}`;
+    }
+  } else {
+    etaFormatted = jobData.eta;
+  }
   
   // Prepare data for submission
   const jobDataToSubmit = {
@@ -127,7 +150,18 @@ export const formatJobDataForSubmission = (jobData, availableDrivers) => {
     color: jobData.color,
     license: jobData.license,
     vin: jobData.vin,
-    odometer: jobData.odometer
+    odometer: jobData.odometer,
+    // Include truck field if it exists
+    truck: jobData.truckAssigned || '',
+    // Ensure these fields are included
+    callerName: jobData.callerName || '',
+    callerPhone: jobData.callerPhone || '',
+    serviceLocationType: jobData.serviceLocationType || '',
+    dropoffLocationType: jobData.dropoffLocationType || '',
+    // Include note fields
+    internalNotes: jobData.internalNotes || '',
+    dispatcherNotes: jobData.dispatcherNotes || '',
+    invoiceNotes: jobData.invoiceNotes || ''
   };
   
   // If a driver is assigned, set appropriate fields
@@ -161,8 +195,23 @@ export const formatJobDataForSubmission = (jobData, availableDrivers) => {
  */
 export const formatJobDataForUpdate = (jobData, selectedJob, availableDrivers) => {
   // Format the ETA based on service time
-  const etaFormatted = jobData.serviceTime === 'Scheduled' ? 
-    `Scheduled for ${jobData.scheduledDate} ${jobData.scheduledTime}` : jobData.eta;
+  let etaFormatted;
+  if (jobData.serviceTime === 'Scheduled') {
+    if (jobData.scheduledTime === 'Custom Date/Time' && jobData.customTime) {
+      // Include the custom time if available
+      etaFormatted = `Scheduled for ${jobData.scheduledDate} ${jobData.customTime}`;
+    } else {
+      etaFormatted = `Scheduled for ${jobData.scheduledDate} ${jobData.scheduledTime}`;
+    }
+  } else {
+    etaFormatted = jobData.eta;
+  }
+  
+  // Debug log for notes
+  console.log('formatJobDataForUpdate - Notes before submission:');
+  console.log('- internalNotes:', jobData.internalNotes);
+  console.log('- dispatcherNotes:', jobData.dispatcherNotes);
+  console.log('- invoiceNotes:', jobData.invoiceNotes);
   
   // Prepare data for submission
   const jobDataToSubmit = {
@@ -176,8 +225,25 @@ export const formatJobDataForUpdate = (jobData, selectedJob, availableDrivers) =
     color: jobData.color,
     license: jobData.license,
     vin: jobData.vin,
-    odometer: jobData.odometer
+    odometer: jobData.odometer,
+    // Include truck field if it exists
+    truck: jobData.truckAssigned || '',
+    // Ensure these fields are included
+    callerName: jobData.callerName || '',
+    callerPhone: jobData.callerPhone || '',
+    serviceLocationType: jobData.serviceLocationType || '',
+    dropoffLocationType: jobData.dropoffLocationType || '',
+    // Include note fields
+    internalNotes: jobData.internalNotes || '',
+    dispatcherNotes: jobData.dispatcherNotes || '',
+    invoiceNotes: jobData.invoiceNotes || ''
   };
+  
+  // Debug log for notes in the final submission object
+  console.log('formatJobDataForUpdate - Notes in submission object:');
+  console.log('- internalNotes:', jobDataToSubmit.internalNotes);
+  console.log('- dispatcherNotes:', jobDataToSubmit.dispatcherNotes);
+  console.log('- invoiceNotes:', jobDataToSubmit.invoiceNotes);
   
   // Handle driver assignment
   if (jobData.driverAssigned) {
@@ -222,8 +288,9 @@ export const formatJobDataForUpdate = (jobData, selectedJob, availableDrivers) =
  * @returns {Object} Parsed job data
  */
 export const parseJobForEditing = (job) => {
-  // Parse locations
-  let serviceLocationType = '';
+  console.log('Parsing job for editing:', job);
+  
+  // Parse service location
   let serviceLocation = {
     street: '',
     city: '',
@@ -244,52 +311,34 @@ export const parseJobForEditing = (job) => {
         country: job.serviceLocation.country || 'USA'
       };
     } else if (typeof job.serviceLocation === 'string') {
-      // Handle legacy string format
-      const match = job.serviceLocation.match(/^([^:]+):\s*(.+)$/);
-      if (match) {
-        serviceLocationType = match[1];
-        // Try to parse the address into components
-        const addressParts = match[2].split(',');
-        if (addressParts.length >= 2) {
-          serviceLocation.street = addressParts[0].trim();
-          
-          // Parse city, state, zip
-          if (addressParts.length >= 2) {
-            serviceLocation.city = addressParts[1].trim();
-          }
-          
-          if (addressParts.length >= 3) {
-            // Try to extract state and zip from the last part
-            const stateZipMatch = addressParts[2].trim().match(/^([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
-            if (stateZipMatch) {
-              serviceLocation.state = stateZipMatch[1];
-              serviceLocation.zip = stateZipMatch[2];
-            } else {
-              serviceLocation.state = addressParts[2].trim();
-            }
-          }
-        } else {
-          // If we can't parse it properly, just put everything in street
-          serviceLocation.street = match[2];
-        }
-      } else if (job.serviceLocation) {
-        // No type prefix, just an address
-        serviceLocation.street = job.serviceLocation;
-      }
+      // Handle legacy string format - just put it in street
+      serviceLocation.street = job.serviceLocation;
     }
   } else if (job.location) {
     // Fall back to location field if serviceLocation is not available
-    const match = job.location.match(/^([^:]+):\s*(.+)$/);
-    if (match) {
-      serviceLocationType = match[1];
-      serviceLocation.street = match[2];
-    } else if (job.location) {
-      serviceLocation.street = job.location;
+    if (typeof job.location === 'string') {
+      // Try to parse the address into components
+      const addressParts = job.location.split(',');
+      if (addressParts.length >= 1) {
+        serviceLocation.street = addressParts[0].trim();
+      }
+      if (addressParts.length >= 2) {
+        serviceLocation.city = addressParts[1].trim();
+      }
+      if (addressParts.length >= 3) {
+        // Try to extract state and zip from the last part
+        const stateZipMatch = addressParts[2].trim().match(/([A-Z]{2})\s+(\d{5}(?:-\d{4})?)/);
+        if (stateZipMatch) {
+          serviceLocation.state = stateZipMatch[1];
+          serviceLocation.zip = stateZipMatch[2];
+        } else {
+          serviceLocation.state = addressParts[2].trim();
+        }
+      }
     }
   }
   
   // Handle dropoff location
-  let dropoffLocationType = '';
   let dropoffLocation = {
     street: '',
     city: '',
@@ -309,38 +358,8 @@ export const parseJobForEditing = (job) => {
         country: job.dropoffLocation.country || 'USA'
       };
     } else if (typeof job.dropoffLocation === 'string') {
-      // Handle legacy string format
-      const match = job.dropoffLocation.match(/^([^:]+):\s*(.+)$/);
-      if (match) {
-        dropoffLocationType = match[1];
-        // Try to parse the address into components
-        const addressParts = match[2].split(',');
-        if (addressParts.length >= 2) {
-          dropoffLocation.street = addressParts[0].trim();
-          
-          // Parse city, state, zip
-          if (addressParts.length >= 2) {
-            dropoffLocation.city = addressParts[1].trim();
-          }
-          
-          if (addressParts.length >= 3) {
-            // Try to extract state and zip from the last part
-            const stateZipMatch = addressParts[2].trim().match(/^([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
-            if (stateZipMatch) {
-              dropoffLocation.state = stateZipMatch[1];
-              dropoffLocation.zip = stateZipMatch[2];
-            } else {
-              dropoffLocation.state = addressParts[2].trim();
-            }
-          }
-        } else {
-          // If we can't parse it properly, just put everything in street
-          dropoffLocation.street = match[2];
-        }
-      } else if (job.dropoffLocation) {
-        // No type prefix, just an address
-        dropoffLocation.street = job.dropoffLocation;
-      }
+      // Handle legacy string format - just put it in street
+      dropoffLocation.street = job.dropoffLocation;
     }
   }
   
@@ -352,21 +371,36 @@ export const parseJobForEditing = (job) => {
   let eta = job.eta || '';
   let scheduledDate = '';
   let scheduledTime = '';
+  let customTime = '';
   
   if (typeof eta === 'string' && eta.includes('Scheduled for')) {
     serviceTime = 'Scheduled';
     const dateTimeStr = eta.replace('Scheduled for ', '');
-    // Try to parse the date and time
-    try {
-      const dateObj = new Date(dateTimeStr);
-      scheduledDate = dateObj.toLocaleDateString();
-      scheduledTime = 'Custom Date/Time';
-    } catch (e) {
-      // If parsing fails, just keep the string as is
-      scheduledDate = dateTimeStr;
+    
+    // Split the date and time parts
+    const parts = dateTimeStr.split(' ');
+    if (parts.length >= 1) {
+      scheduledDate = parts[0]; // First part is the date
+    }
+    if (parts.length >= 2) {
+      // Remaining parts form the time
+      const timeStr = parts.slice(1).join(' ');
+      
+      // Check if this is a custom time or one of the predefined options
+      if (['Today', 'Tomorrow', 'This Week', 'Next Week', 'This Month'].includes(timeStr)) {
+        scheduledTime = timeStr;
+      } else {
+        scheduledTime = 'Custom Date/Time';
+        customTime = timeStr; // Store the actual time string
+      }
+    } else {
       scheduledTime = 'Custom Date/Time';
     }
   }
+  
+  // Get service location type and dropoff location type
+  const serviceLocationType = job.serviceLocationType || '';
+  const dropoffLocationType = job.dropoffLocationType || '';
   
   // Return the parsed job data
   return {
@@ -381,23 +415,24 @@ export const parseJobForEditing = (job) => {
     customerEmail: job.customerEmail || '',
     
     // Vehicle section
-    vin: vehicleInfo.vin || '',
-    make: vehicleInfo.make || '',
-    model: vehicleInfo.model || '',
-    year: vehicleInfo.year || '',
-    color: vehicleInfo.color || '',
-    license: vehicleInfo.license || '',
-    odometer: vehicleInfo.odometer || '',
+    vin: vehicleInfo.vin || job.vin || '',
+    make: vehicleInfo.make || job.make || '',
+    model: vehicleInfo.model || job.model || '',
+    year: vehicleInfo.year || job.year || '',
+    color: vehicleInfo.color || job.color || '',
+    license: vehicleInfo.license || job.license || '',
+    odometer: vehicleInfo.odometer || job.odometer || '',
     
     // Service section
     serviceTime: serviceTime,
     eta: serviceTime === 'ASAP' ? eta : '',
     scheduledDate: scheduledDate,
     scheduledTime: scheduledTime,
+    customTime: customTime, // Add the custom time field
     service: job.service || '',
     classType: job.classType || '',
     driverAssigned: job.driverId || '',
-    truckAssigned: job.truck || '',
+    truckAssigned: job.truck || '', // This is for the UI
     
     // Location section
     serviceLocationType: serviceLocationType,
@@ -406,7 +441,9 @@ export const parseJobForEditing = (job) => {
     dropoffLocation: dropoffLocation,
     
     // Notes
-    notes: job.notes || '',
+    internalNotes: job.internalNotes || '',
+    dispatcherNotes: job.dispatcherNotes || '',
+    invoiceNotes: job.invoiceNotes || '',
     
     // Contacts
     pickupContact: job.pickupContact || { name: '', number: '' },

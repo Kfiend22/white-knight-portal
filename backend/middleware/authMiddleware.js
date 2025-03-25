@@ -8,21 +8,28 @@ const User = require('../models/userModel');
 const protect = async (req, res, next) => {
   let token;
 
+  // Log the entire request headers for debugging
+  console.log('Request Headers:', req.headers);
+
   // Check if authorization header exists and starts with Bearer
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     try {
       // Get token from header
       token = req.headers.authorization.split(' ')[1];
+      console.log('Token:', token); // Log the extracted token
       
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'defaultsecret');
+      console.log('Decoded Token:', decoded); // Log the decoded token
       
       // Get user from the token and exclude the password field
       // The user ID could be in decoded.id or decoded.user.id depending on how the token was created
       const userId = decoded.user ? decoded.user.id : decoded.id;
+      console.log('User ID:', userId); // Log the extracted user ID
       
       // Get user with full details
       const user = await User.findById(userId).select('-password');
+      console.log('User from DB:', user); // Log the fetched user object
       
       if (!user) {
         return res.status(401).json({ message: 'User not found' });
@@ -78,14 +85,15 @@ const protect = async (req, res, next) => {
       
       // Check if user is active
       if (user.isActive === false) {
-        return res.status(403).json({ 
-          message: 'Account is inactive. Please contact an administrator.' 
+        return res.status(403).json({
+          message: 'Account is inactive. Please contact an administrator.'
         });
       }
       
+      console.log('Middleware complete - calling next()'); // Log before calling next()
       next();
     } catch (error) {
-      console.error('Token verification failed:', error);
+      console.error('Error in protect middleware:', error); // Enhanced error logging
       
       if (error.name === 'TokenExpiredError') {
         return res.status(401).json({ message: 'Token expired, please log in again' });

@@ -36,7 +36,6 @@ function Dashboard() {
   // State for notifications and loading
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
   const [isLoading, setIsLoading] = useState(false);
-  const [refreshJobs, setRefreshJobs] = useState(0);
   
   // Use custom hooks
   const { userProfile, userCompanies } = useUserProfile();
@@ -75,15 +74,7 @@ function Dashboard() {
     setSelectedJob(null);
   };
 
-  // Handler for job created
-  const handleJobCreated = () => {
-    setRefreshJobs(prev => prev + 1);
-  };
-
-  // Handler for job updated
-  const handleJobUpdated = () => {
-    setRefreshJobs(prev => prev + 1);
-  };
+  // Job handlers are no longer needed as we're using web socket updates
 
   // Handler for creating a demo job
   const handleCreateDemoJob = useCallback(() => {
@@ -102,8 +93,7 @@ function Dashboard() {
             severity: 'success'
           });
           
-          // Trigger refresh of job list
-          setRefreshJobs(prev => prev + 1);
+          // Job will be updated via websocket, no need to manually refresh
         } else {
           setNotification({
             open: true,
@@ -188,7 +178,6 @@ function Dashboard() {
                 <Jobs 
                   jobCategory="scheduled" 
                   onEditJob={handleEditJob} 
-                  refreshTrigger={refreshJobs}
                   onSocketStatusChange={setSocketStatus}
                 />
               </Box>
@@ -202,7 +191,6 @@ function Dashboard() {
                 <Jobs 
                   jobCategory="inProgress"
                   onEditJob={handleEditJob} 
-                  refreshTrigger={refreshJobs}
                   onSocketStatusChange={setSocketStatus}
                 />
                 
@@ -212,7 +200,6 @@ function Dashboard() {
                 <Jobs
                   jobCategory="pending"
                   onEditJob={handleEditJob}
-                  refreshTrigger={refreshJobs}
                   onSocketStatusChange={setSocketStatus}
                 />
               </Box>
@@ -226,7 +213,6 @@ function Dashboard() {
                 <Jobs 
                   jobCategory="completed"
                   onEditJob={handleEditJob}
-                  refreshTrigger={refreshJobs}
                   onSocketStatusChange={setSocketStatus}
                 />
               </Box>
@@ -240,7 +226,6 @@ function Dashboard() {
                 <Jobs 
                   jobCategory="canceled"
                   onEditJob={handleEditJob} 
-                  refreshTrigger={refreshJobs}
                   onSocketStatusChange={setSocketStatus}
                 />
               </Box>
@@ -271,7 +256,6 @@ function Dashboard() {
                   onCreateJob={handleAddJob}
                   onEditJob={handleEditJob}
                   onReceiveDemoJob={handleCreateDemoJob}
-                  refreshTrigger={refreshJobs}
                   onSocketStatusChange={setSocketStatus}
                 />
 
@@ -317,8 +301,6 @@ function Dashboard() {
           userProfile={userProfile}
           userCompanies={userCompanies}
           vehicleData={vehicleData}
-          onJobCreated={handleJobCreated}
-          onJobUpdated={handleJobUpdated}
           setNotification={setNotification}
         />
         

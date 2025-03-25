@@ -51,10 +51,16 @@ const ContactSection = ({ jobData, handleNestedInputChange, handleCopyCustomer }
             fullWidth
             label="Pickup Number *"
             value={jobData.pickupContact.number}
-            onChange={(e) => handleNestedInputChange('pickupContact', 'number', e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (/^[0-9]*$/.test(value)) { // Allow only numbers
+                handleNestedInputChange('pickupContact', 'number', value);
+              }
+            }}
             required
             error={!jobData.pickupContact.number}
             helperText={!jobData.pickupContact.number ? "Required" : ""}
+            inputProps={{ maxLength: 10 }} // Add maxLength
           />
         </Grid>
       </Grid>
@@ -74,7 +80,13 @@ const ContactSection = ({ jobData, handleNestedInputChange, handleCopyCustomer }
             fullWidth
             label="Dropoff Number"
             value={jobData.dropoffContact.number}
-            onChange={(e) => handleNestedInputChange('dropoffContact', 'number', e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (/^[0-9]*$/.test(value)) { // Allow only numbers
+                handleNestedInputChange('dropoffContact', 'number', value);
+              }
+            }}
+            inputProps={{ maxLength: 10 }} // Add maxLength
           />
         </Grid>
       </Grid>

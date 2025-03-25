@@ -2,6 +2,7 @@
 // Customer section for the job dialog
 
 import React from 'react';
+import { isDriverUser } from '../../utils/authUtils';
 import {
   Grid,
   Paper,
@@ -19,9 +20,14 @@ import {
  * @param {Object} props.jobData Current job data
  * @param {Function} props.handleInputChange Function to handle input changes
  * @param {Array} props.userCompanies User's companies
+ * @param {Object} props.currentUser Current user data
  * @returns {JSX.Element} Customer section component
  */
-const CustomerSection = ({ jobData, handleInputChange, userCompanies }) => {
+const CustomerSection = ({ jobData, handleInputChange, userCompanies, currentUser }) => {
+  console.log("CustomerSection.js - jobData.account:", jobData.account);
+  
+  // Check if user is driver-only
+  const isDriverOnly = currentUser ? isDriverUser(currentUser) : false;
   return (
     <Paper sx={{ p: 2, mb: 2 }}>
       <Typography variant="h6" gutterBottom>Customer</Typography>
@@ -33,15 +39,19 @@ const CustomerSection = ({ jobData, handleInputChange, userCompanies }) => {
               value={jobData.account}
               onChange={(e) => handleInputChange('account', e.target.value)}
               label="Account"
+              disabled={isDriverOnly}
             >
               <MenuItem value="">
                 <em>- Select -</em>
               </MenuItem>
-              {userCompanies.map((company) => (
-                <MenuItem key={company.id} value={company.name}>
-                  {company.name}
-                </MenuItem>
-              ))}
+              {userCompanies.map((company) => {
+                console.log("CustomerSection.js MenuItem value:", company.name);
+                return (
+                  <MenuItem key={company.id} value={company.name}>
+                    {company.name}
+                  </MenuItem>
+                );
+              })}
             </Select>
           </FormControl>
         </Grid>
@@ -52,6 +62,7 @@ const CustomerSection = ({ jobData, handleInputChange, userCompanies }) => {
               value={jobData.paymentType}
               onChange={(e) => handleInputChange('paymentType', e.target.value)}
               label="Payment Type"
+              disabled={isDriverOnly}
             >
               <MenuItem value="">
                 <em>- Select -</em>
@@ -90,7 +101,13 @@ const CustomerSection = ({ jobData, handleInputChange, userCompanies }) => {
             label="Caller Phone"
             fullWidth
             value={jobData.callerPhone}
-            onChange={(e) => handleInputChange('callerPhone', e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (/^[0-9]*$/.test(value)) { // Allow only numbers
+                handleInputChange('callerPhone', value);
+              }
+            }}
+            inputProps={{ maxLength: 10 }} // Add maxLength
           />
         </Grid>
         <Grid item xs={12} sm={6}>
@@ -112,10 +129,16 @@ const CustomerSection = ({ jobData, handleInputChange, userCompanies }) => {
             label="Customer Phone *"
             fullWidth
             value={jobData.customerPhone}
-            onChange={(e) => handleInputChange('customerPhone', e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (/^[0-9]*$/.test(value)) { // Allow only numbers
+                handleInputChange('customerPhone', value);
+              }
+            }}
             required
             error={!jobData.customerPhone}
             helperText={!jobData.customerPhone ? "Required" : ""}
+            inputProps={{ maxLength: 10 }} // Add maxLength
           />
         </Grid>
         <Grid item xs={12}>

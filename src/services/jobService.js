@@ -47,9 +47,19 @@ export const createJob = async (jobData) => {
  */
 export const updateJob = async (jobId, jobData) => {
   try {
+    console.log('jobService.updateJob - Notes in request:');
+    console.log('- internalNotes:', jobData.internalNotes);
+    console.log('- dispatcherNotes:', jobData.dispatcherNotes);
+    console.log('- invoiceNotes:', jobData.invoiceNotes);
+    
+    // Log the entire job data for debugging
+    console.log('jobService.updateJob - Full job data being sent:', JSON.stringify(jobData, null, 2));
+    
     const response = await axios.put(`/api/jobs/${jobId}`, jobData, {
       headers: getAuthHeader()
     });
+    
+    console.log('jobService.updateJob - Response received:', response.data);
     
     return {
       success: true,
@@ -320,6 +330,257 @@ export const arriveAtJob = async (jobId) => {
     return {
       success: false,
       message: error.response?.data?.message || 'Failed to record arrival',
+      error
+    };
+  }
+};
+
+/**
+ * Upload documents for a job
+ * @param {string} jobId Job ID
+ * @param {FormData} formData FormData object containing the files to upload
+ * @returns {Promise<Object>} API response
+ */
+export const uploadJobDocuments = async (jobId, formData) => {
+  try {
+    const response = await axios.post(`/api/jobs/${jobId}/upload`, formData, {
+      headers: {
+        ...getAuthHeader(),
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    
+    return {
+      success: true,
+      message: response.data.message || 'Documents uploaded successfully',
+      data: response.data
+    };
+  } catch (error) {
+    console.error('Error uploading documents:', error);
+    
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Failed to upload documents',
+      error
+    };
+  }
+};
+
+/**
+ * Get all documents for a job
+ * @param {string} jobId Job ID
+ * @returns {Promise<Object>} API response
+ */
+export const getJobDocuments = async (jobId) => {
+  try {
+    const response = await axios.get(`/api/jobs/${jobId}/documents`, {
+      headers: getAuthHeader()
+    });
+    
+    return {
+      success: true,
+      data: response.data.documents || []
+    };
+  } catch (error) {
+    console.error('Error fetching job documents:', error);
+    
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Failed to fetch job documents',
+      error,
+      data: []
+    };
+  }
+};
+
+/**
+ * Get the download URL for a job document
+ * @param {string} jobId Job ID
+ * @param {string} filename Document filename
+ * @returns {string} Download URL
+ */
+export const getJobDocumentDownloadUrl = (jobId, filename) => {
+  return `/api/jobs/${jobId}/documents/${encodeURIComponent(filename)}`;
+};
+
+/**
+ * Get a job document as a data URL (for displaying images)
+ * @param {string} jobId Job ID
+ * @param {string} filename Document filename
+ * @returns {Promise<string>} Data URL for the image
+ */
+export const getJobDocumentAsDataUrl = async (jobId, filename) => {
+  try {
+    const response = await axios.get(`/api/jobs/${jobId}/documents/${encodeURIComponent(filename)}/view`, {
+      headers: getAuthHeader(),
+      responseType: 'blob'
+    });
+    
+    return URL.createObjectURL(response.data);
+  } catch (error) {
+    console.error('Error fetching job document as data URL:', error);
+    return null;
+  }
+};
+
+/**
+ * Delete a job document
+ * @param {string} jobId Job ID
+ * @param {string} filename Document filename
+ * @returns {Promise<Object>} API response
+ */
+export const deleteJobDocument = async (jobId, filename) => {
+  try {
+    const response = await axios.delete(`/api/jobs/${jobId}/documents/${encodeURIComponent(filename)}`, {
+      headers: getAuthHeader()
+    });
+    
+    return {
+      success: true,
+      message: response.data.message || 'Document deleted successfully',
+      data: response.data
+    };
+  } catch (error) {
+    console.error('Error deleting job document:', error);
+    
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Failed to delete document',
+      error
+    };
+  }
+};
+
+/**
+ * Approve a GOA request
+ * @param {string} jobId Job ID
+ * @returns {Promise<Object>} API response
+ */
+export const approveGOA = async (jobId) => {
+  try {
+    const response = await axios.put(`/api/jobs/${jobId}/goa/approve`, {}, {
+      headers: getAuthHeader()
+    });
+    
+    return {
+      success: true,
+      message: response.data.message || 'GOA request approved successfully',
+      data: response.data
+    };
+  } catch (error) {
+    console.error('Error approving GOA request:', error);
+    
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Failed to approve GOA request',
+      error
+    };
+  }
+};
+
+/**
+ * Deny a GOA request
+ * @param {string} jobId Job ID
+ * @returns {Promise<Object>} API response
+ */
+export const denyGOA = async (jobId) => {
+  try {
+    const response = await axios.put(`/api/jobs/${jobId}/goa/deny`, {}, {
+      headers: getAuthHeader()
+    });
+    
+    return {
+      success: true,
+      message: response.data.message || 'GOA request denied successfully',
+      data: response.data
+    };
+  } catch (error) {
+    console.error('Error denying GOA request:', error);
+    
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Failed to deny GOA request',
+      error
+    };
+  }
+};
+
+/**
+ * Approve an unsuccessful request
+ * @param {string} jobId Job ID
+ * @returns {Promise<Object>} API response
+ */
+export const approveUnsuccessfulJob = async (jobId) => {
+  try {
+    const response = await axios.put(`/api/jobs/${jobId}/unsuccessful/approve`, {}, {
+      headers: getAuthHeader()
+    });
+    
+    return {
+      success: true,
+      message: response.data.message || 'Unsuccessful request approved successfully',
+      data: response.data
+    };
+  } catch (error) {
+    console.error('Error approving unsuccessful request:', error);
+    
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Failed to approve unsuccessful request',
+      error
+    };
+  }
+};
+
+/**
+ * Deny an unsuccessful request
+ * @param {string} jobId Job ID
+ * @returns {Promise<Object>} API response
+ */
+export const denyUnsuccessfulJob = async (jobId) => {
+  try {
+    const response = await axios.put(`/api/jobs/${jobId}/unsuccessful/deny`, {}, {
+      headers: getAuthHeader()
+    });
+    
+    return {
+      success: true,
+      message: response.data.message || 'Unsuccessful request denied successfully',
+      data: response.data
+    };
+  } catch (error) {
+    console.error('Error denying unsuccessful request:', error);
+    
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Failed to deny unsuccessful request',
+      error
+    };
+  }
+};
+
+/**
+ * Permanently delete a job
+ * @param {string} jobId Job ID to delete
+ * @returns {Promise<Object>} API response
+ */
+export const deleteJob = async (jobId) => {
+  try {
+    const response = await axios.delete(`/api/jobs/${jobId}`, {
+      headers: getAuthHeader()
+    });
+    
+    return {
+      success: true,
+      message: response.data.message || 'Job deleted successfully',
+      data: response.data
+    };
+  } catch (error) {
+    console.error('Error deleting job:', error);
+    
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Failed to delete job',
       error
     };
   }

@@ -346,23 +346,32 @@ const checkJobAccess = () => {
     }
 
     try {
+      console.log(`checkJobAccess - User: ${JSON.stringify(req.user)}`);
+      console.log(`checkJobAccess - Job ID: ${req.params.id}`);
+      
       const Job = require('../models/Job');
       
       // Get the job from the database
       const job = await Job.findById(req.params.id);
       
       if (!job) {
+        console.log(`checkJobAccess - Job not found with ID: ${req.params.id}`);
         return res.status(404).json({ message: 'Job not found' });
       }
+      
+      console.log(`checkJobAccess - Job found: ${job.id}, status: ${job.status}`);
       
       // Check if user can view the job
       const canView = await canViewJob(req.user.id, job);
       
       if (!canView) {
+        console.log(`checkJobAccess - User ${req.user.id} cannot view job ${job.id}`);
         return res.status(403).json({ 
           message: 'You do not have permission to view this job'
         });
       }
+      
+      console.log(`checkJobAccess - User ${req.user.id} can view job ${job.id}`);
       
       // Add job to request for later use
       req.job = job;
@@ -370,7 +379,11 @@ const checkJobAccess = () => {
       next();
     } catch (error) {
       console.error('Error in checkJobAccess middleware:', error);
-      res.status(500).json({ message: 'Server error' });
+      console.error(error.stack);
+      res.status(500).json({ 
+        message: 'Server error',
+        error: error.message
+      });
     }
   };
 };

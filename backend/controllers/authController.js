@@ -16,12 +16,24 @@ const generateToken = (user, rememberMe = false) => {
   // Get legacy permissions
   const legacyPermissions = user.permissions || { pages: [], actions: [] };
   
+  // Ensure secondaryRoles is always an array
+  let secondaryRolesArray = [];
+  
+  // If secondaryRoles is an object with role names as keys (e.g. {driver: true})
+  if (user.secondaryRoles && typeof user.secondaryRoles === 'object' && !Array.isArray(user.secondaryRoles)) {
+    secondaryRolesArray = Object.keys(user.secondaryRoles).filter(role => user.secondaryRoles[role]);
+  } 
+  // If it's already an array, use it directly
+  else if (Array.isArray(user.secondaryRoles)) {
+    secondaryRolesArray = user.secondaryRoles;
+  }
+  
   return jwt.sign(
     { 
       user: {
         id: user._id,
         primaryRole: user.primaryRole || user.role, // Support both new and legacy schema
-        secondaryRoles: user.secondaryRoles || {},
+        secondaryRoles: secondaryRolesArray, // Now always an array
         vendorNumber: user.vendorNumber || user.vendorId, // Support both new and legacy schema
         regions: user.regions || (user.region ? [user.region] : []),
         accessiblePages: accessiblePages, // Include accessible pages from virtual property
@@ -351,12 +363,24 @@ const loginUser = async (req, res) => {
     const token = generateToken(user, rememberMe);
     
     // Prepare user data for response
+    // Ensure secondaryRoles is always an array
+    let secondaryRolesArray = [];
+    
+    // If secondaryRoles is an object with role names as keys (e.g. {driver: true})
+    if (user.secondaryRoles && typeof user.secondaryRoles === 'object' && !Array.isArray(user.secondaryRoles)) {
+      secondaryRolesArray = Object.keys(user.secondaryRoles).filter(role => user.secondaryRoles[role]);
+    } 
+    // If it's already an array, use it directly
+    else if (Array.isArray(user.secondaryRoles)) {
+      secondaryRolesArray = user.secondaryRoles;
+    }
+    
     const userData = {
       _id: user._id,
       username: user.username,
       email: user.email,
       primaryRole: user.primaryRole || user.role,
-      secondaryRoles: user.secondaryRoles || {},
+      secondaryRoles: secondaryRolesArray, // Now always an array
       vendorNumber: user.vendorNumber || user.vendorId,
       fullName: user.fullName || `${user.firstName || user.ownerFirstName} ${user.lastName || user.ownerLastName}`
     };
@@ -564,12 +588,24 @@ const verify2FA = async (req, res) => {
     const token = generateToken(user, true); // Use remember me for 2FA users
     
     // Prepare user data for response
+    // Ensure secondaryRoles is always an array
+    let secondaryRolesArray = [];
+    
+    // If secondaryRoles is an object with role names as keys (e.g. {driver: true})
+    if (user.secondaryRoles && typeof user.secondaryRoles === 'object' && !Array.isArray(user.secondaryRoles)) {
+      secondaryRolesArray = Object.keys(user.secondaryRoles).filter(role => user.secondaryRoles[role]);
+    } 
+    // If it's already an array, use it directly
+    else if (Array.isArray(user.secondaryRoles)) {
+      secondaryRolesArray = user.secondaryRoles;
+    }
+    
     const userData = {
       _id: user._id,
       username: user.username,
       email: user.email,
       primaryRole: user.primaryRole || user.role,
-      secondaryRoles: user.secondaryRoles || {},
+      secondaryRoles: secondaryRolesArray, // Now always an array
       vendorNumber: user.vendorNumber || user.vendorId,
       fullName: user.fullName || `${user.firstName || user.ownerFirstName} ${user.lastName || user.ownerLastName}`
     };

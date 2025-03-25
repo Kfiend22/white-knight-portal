@@ -172,10 +172,16 @@ const LocationSection = ({
                 label="ZIP Code *"
                 fullWidth
                 value={jobData.serviceLocation.zip}
-                onChange={(e) => handleNestedInputChange('serviceLocation', 'zip', e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (/^[0-9]*$/.test(value)) { // Allow only numbers
+                    handleNestedInputChange('serviceLocation', 'zip', value);
+                  }
+                }}
                 required
                 error={!jobData.serviceLocation.zip}
                 helperText={!jobData.serviceLocation.zip ? "Required" : ""}
+                inputProps={{ maxLength: 10 }} // Add maxLength to allow for ZIP+4
               />
             </Grid>
           </Grid>
@@ -292,7 +298,13 @@ const LocationSection = ({
                 label="ZIP Code"
                 fullWidth
                 value={jobData.dropoffLocation.zip}
-                onChange={(e) => handleNestedInputChange('dropoffLocation', 'zip', e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (/^[0-9]*$/.test(value)) { // Allow only numbers
+                    handleNestedInputChange('dropoffLocation', 'zip', value);
+                  }
+                }}
+                inputProps={{ maxLength: 10 }} // Add maxLength to allow for ZIP+4
               />
             </Grid>
           </Grid>

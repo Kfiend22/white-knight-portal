@@ -2,6 +2,7 @@
 // Service section for the job dialog
 
 import React, { useState, useEffect } from 'react';
+import { isDriverUser } from '../../utils/authUtils';
 import {
   Grid,
   Paper,
@@ -27,9 +28,12 @@ import {
  * @param {Function} props.handleInputChange Function to handle input changes
  * @param {Array} props.availableDrivers List of available drivers
  * @param {Array} props.vehicles List of vehicles
+ * @param {Object} props.currentUser Current user data
  * @returns {JSX.Element} Service section component
  */
-const ServiceSection = ({ jobData, handleInputChange, availableDrivers, vehicles = [] }) => {
+const ServiceSection = ({ jobData, handleInputChange, availableDrivers, vehicles = [], currentUser }) => {
+  // Check if user is driver-only
+  const isDriverOnly = currentUser ? isDriverUser(currentUser) : false;
   // State for all vehicles, combining prop and localStorage
   const [allVehicles, setAllVehicles] = useState([]);
   
@@ -86,13 +90,16 @@ const ServiceSection = ({ jobData, handleInputChange, availableDrivers, vehicles
           {jobData.serviceTime === 'ASAP' ? (
             <TextField
               margin="dense"
-              label="ETA *"
+              label="ETA"
               fullWidth
               value={jobData.eta}
-              onChange={(e) => handleInputChange('eta', e.target.value)}
-              required
-              error={!jobData.eta}
-              helperText={!jobData.eta ? "Required" : ""}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (/^[0-9]*$/.test(value)) {
+                  handleInputChange('eta', value);
+                }
+              }}
+              inputProps={{ maxLength: 3 }}
             />
           ) : (
             <Grid container spacing={2}>
@@ -160,22 +167,37 @@ const ServiceSection = ({ jobData, handleInputChange, availableDrivers, vehicles
                       label="Date (MM/DD/YYYY) *"
                       fullWidth
                       value={jobData.scheduledDate}
-                      onChange={(e) => handleInputChange('scheduledDate', e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Allow typing partial dates, but only with valid characters
+                        if (/^[0-9/]*$/.test(value)) {
+                          handleInputChange('scheduledDate', value);
+                        }
+                      }}
                       placeholder="MM/DD/YYYY"
                       required
                       error={!jobData.scheduledDate}
                       helperText={!jobData.scheduledDate ? "Required" : ""}
+                      inputProps={{ maxLength: 10 }}
                     />
                   </Grid>
                   <Grid item xs={6}>
                     <TextField
                       margin="dense"
-                      label="Time (HH:MM AM/PM) *"
+                      label="Time (HH:MM AM/PM or 24hr) *"
                       fullWidth
                       value={jobData.customTime || ''}
-                      onChange={(e) => handleInputChange('customTime', e.target.value)}
-                      placeholder="HH:MM AM"
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Allow both 12-hour and 24-hour formats
+                        // This regex allows partial input while typing
+                        if (/^[0-9: AMP]*$/.test(value)) {
+                          handleInputChange('customTime', value);
+                        }
+                      }}
+                      placeholder="HH:MM AM or HH:MM (24hr)"
                       required
+                      inputProps={{ maxLength: 8 }}
                     />
                   </Grid>
                 </>
@@ -230,6 +252,7 @@ const ServiceSection = ({ jobData, handleInputChange, availableDrivers, vehicles
             <InputLabel>Driver Assigned</InputLabel>
             <Select
               value={jobData.driverAssigned}
+              disabled={isDriverOnly}
               onChange={(e) => {
                 const driverId = e.target.value;
                 handleInputChange('driverAssigned', driverId);
@@ -275,6 +298,7 @@ const ServiceSection = ({ jobData, handleInputChange, availableDrivers, vehicles
               value={jobData.truckAssigned}
               onChange={(e) => handleInputChange('truckAssigned', e.target.value)}
               label="Truck Assigned"
+              disabled={isDriverOnly}
             >
               <MenuItem value="">
                 <em>- Select -</em>

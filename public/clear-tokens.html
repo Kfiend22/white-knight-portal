@@ -3,104 +3,204 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Clear Authentication Tokens</title>
+    <title>White Knight Portal - Clear Authentication Data</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 600px;
+            line-height: 1.6;
+            max-width: 800px;
             margin: 0 auto;
             padding: 20px;
-            line-height: 1.6;
+            color: #333;
         }
-        .container {
-            border: 1px solid #ddd;
-            border-radius: 8px;
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        .card {
+            background-color: #f8f9fa;
+            border-radius: 5px;
             padding: 20px;
-            margin-top: 20px;
-            background-color: #f9f9f9;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .warning {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
         }
         button {
-            background-color: #4CAF50;
-            border: none;
+            background-color: #dc3545;
             color: white;
+            border: none;
             padding: 10px 20px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            font-size: 16px;
-            margin: 10px 0;
+            border-radius: 5px;
             cursor: pointer;
-            border-radius: 4px;
+            font-size: 16px;
+            font-weight: bold;
         }
         button:hover {
-            background-color: #45a049;
+            background-color: #c82333;
         }
-        .alert {
+        #result {
+            margin-top: 20px;
+        }
+        .storage-info {
+            background-color: #e2e3e5;
             padding: 15px;
-            border-radius: 4px;
-            margin: 15px 0;
-            display: none;
+            border-radius: 5px;
+            margin-top: 20px;
         }
-        .success {
-            background-color: #dff0d8;
-            color: #3c763d;
-            border: 1px solid #d6e9c6;
+        .storage-item {
+            margin-bottom: 5px;
+            font-family: monospace;
         }
-        .error {
-            background-color: #f2dede;
-            color: #a94442;
-            border: 1px solid #ebccd1;
+        .storage-section {
+            margin-bottom: 15px;
+        }
+        .storage-section h3 {
+            margin-bottom: 10px;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
         }
     </style>
 </head>
 <body>
-    <h1>White Knight Portal - Clear Authentication Tokens</h1>
+    <h1>White Knight Portal - Clear Authentication Data</h1>
     
-    <div class="container">
-        <h2>Authentication Loop Fix</h2>
-        <p>If you're experiencing authentication issues or login loops, this utility will clear your stored tokens and redirect you to the login page.</p>
+    <div class="card">
+        <h2>Authentication Storage Cleaner</h2>
+        <p>This tool will clear all authentication-related data from your browser's storage, including:</p>
+        <ul>
+            <li>Authentication tokens</li>
+            <li>User information</li>
+            <li>Session data</li>
+            <li>Socket connection data</li>
+        </ul>
         
-        <div id="successAlert" class="alert success">
-            Tokens cleared successfully! You will be redirected to the login page in 3 seconds...
+        <div class="warning">
+            <strong>Warning:</strong> After clearing this data, you will be logged out of the White Knight Portal and will need to log in again.
         </div>
         
-        <div id="errorAlert" class="alert error">
-            An error occurred while clearing tokens. Please try again or clear them manually using browser developer tools.
-        </div>
-        
-        <button id="clearButton">Clear Authentication Tokens</button>
+        <button id="clearButton">Clear Authentication Data</button>
     </div>
     
-    <div class="container">
-        <h2>Manual Instructions</h2>
-        <p>If the button above doesn't work, you can clear the tokens manually:</p>
-        <ol>
-            <li>Open browser developer tools (F12 or right-click → Inspect)</li>
-            <li>Go to Application tab → Storage → Local Storage</li>
-            <li>Delete the 'token' and 'user' entries</li>
-            <li>Refresh the application page</li>
-        </ol>
+    <div id="result"></div>
+    
+    <div class="storage-info">
+        <h2>Current Storage Information</h2>
+        
+        <div class="storage-section">
+            <h3>Local Storage</h3>
+            <div id="localStorageItems"></div>
+        </div>
+        
+        <div class="storage-section">
+            <h3>Session Storage</h3>
+            <div id="sessionStorageItems"></div>
+        </div>
+        
+        <div class="storage-section">
+            <h3>Cookies</h3>
+            <div id="cookieItems"></div>
+        </div>
     </div>
-
+    
     <script>
-        document.getElementById('clearButton').addEventListener('click', function() {
-            try {
-                // Clear the authentication tokens
-                localStorage.removeItem('token');
-                localStorage.removeItem('user');
-                
-                // Show success message
-                document.getElementById('successAlert').style.display = 'block';
-                
-                // Redirect to login page after 3 seconds
-                setTimeout(function() {
-                    window.location.href = '/login';
-                }, 3000);
-            } catch (error) {
-                // Show error message
-                document.getElementById('errorAlert').style.display = 'block';
-                console.error('Error clearing tokens:', error);
+        // Display current storage information
+        function displayStorageInfo() {
+            // Local Storage
+            const localStorageDiv = document.getElementById('localStorageItems');
+            localStorageDiv.innerHTML = '';
+            
+            if (localStorage.length === 0) {
+                localStorageDiv.innerHTML = '<p>No items in localStorage</p>';
+            } else {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    let value = localStorage.getItem(key);
+                    
+                    // Truncate long values
+                    if (value && value.length > 100) {
+                        value = value.substring(0, 100) + '...';
+                    }
+                    
+                    const item = document.createElement('div');
+                    item.className = 'storage-item';
+                    item.innerHTML = `<strong>${key}</strong>: ${value}`;
+                    localStorageDiv.appendChild(item);
+                }
             }
+            
+            // Session Storage
+            const sessionStorageDiv = document.getElementById('sessionStorageItems');
+            sessionStorageDiv.innerHTML = '';
+            
+            if (sessionStorage.length === 0) {
+                sessionStorageDiv.innerHTML = '<p>No items in sessionStorage</p>';
+            } else {
+                for (let i = 0; i < sessionStorage.length; i++) {
+                    const key = sessionStorage.key(i);
+                    let value = sessionStorage.getItem(key);
+                    
+                    // Truncate long values
+                    if (value && value.length > 100) {
+                        value = value.substring(0, 100) + '...';
+                    }
+                    
+                    const item = document.createElement('div');
+                    item.className = 'storage-item';
+                    item.innerHTML = `<strong>${key}</strong>: ${value}`;
+                    sessionStorageDiv.appendChild(item);
+                }
+            }
+            
+            // Cookies
+            const cookieDiv = document.getElementById('cookieItems');
+            cookieDiv.innerHTML = '';
+            
+            if (document.cookie === '') {
+                cookieDiv.innerHTML = '<p>No cookies found</p>';
+            } else {
+                const cookies = document.cookie.split(';');
+                cookies.forEach(cookie => {
+                    const item = document.createElement('div');
+                    item.className = 'storage-item';
+                    item.textContent = cookie.trim();
+                    cookieDiv.appendChild(item);
+                });
+            }
+        }
+        
+        // Display initial storage info
+        displayStorageInfo();
+        
+        // Set up clear button
+        document.getElementById('clearButton').addEventListener('click', function() {
+            // Load and execute the clear-storage.js script
+            const script = document.createElement('script');
+            script.src = '/clear-storage.js';
+            document.body.appendChild(script);
+            
+            // Update the result div
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `
+                <div style="background-color: #d4edda; color: #155724; padding: 15px; border-radius: 5px; margin-top: 20px;">
+                    <h3>✅ Storage Successfully Cleared!</h3>
+                    <p>All authentication data has been removed from your browser.</p>
+                    <p>You can now <a href="/login" style="color: #155724; font-weight: bold;">go to the login page</a> to test authentication.</p>
+                </div>
+            `;
+            
+            // Update storage info after clearing
+            setTimeout(displayStorageInfo, 500);
         });
     </script>
 </body>

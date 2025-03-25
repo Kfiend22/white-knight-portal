@@ -132,6 +132,48 @@ const userSchema = new mongoose.Schema({
     default: true
   },
   
+  // Notification preferences
+  receiveEmailNotifications: {
+    type: Boolean,
+    default: true
+  },
+  receiveTextNotifications: {
+    type: Boolean,
+    default: true
+  },
+  notifyOnNewJob: {
+    type: Boolean,
+    default: true
+  },
+  notifyOnJobCanceled: {
+    type: Boolean,
+    default: true
+  },
+  notifyOnJobOnScene: {
+    type: Boolean,
+    default: true
+  },
+  notifyOnJobReassigned: {
+    type: Boolean,
+    default: true
+  },
+  notifyOnJobMarkedAsGOA: {
+    type: Boolean,
+    default: true
+  },
+  
+  // Profile picture
+  profilePicture: {
+    type: String,
+    default: '/images/default-profile.png'
+  },
+  
+  // Phone number (separate from the legacy 'phone' field)
+  phoneNumber: {
+    type: String,
+    default: ''
+  },
+  
   // 2FA options
   twoFactorAuth: {
     enabled: { 
@@ -322,12 +364,17 @@ userSchema.methods.matchPassword = async function(enteredPassword) {
 
 // Auto-assign region based on address state/province
 userSchema.pre('save', async function(next) {
+  console.log('Pre-save hook: Auto-assign region - Starting');
+  
   // Skip if no address or if user is OW/sOW (they don't need region assignment)
   if (!this.address?.state || ['OW', 'sOW'].includes(this.primaryRole)) {
+    console.log('Pre-save hook: Auto-assign region - Skipping (no state or OW/sOW role)');
     return next();
   }
   
   try {
+    console.log(`Pre-save hook: Auto-assign region - Checking for region with state: ${this.address.state}`);
+    
     // Find region that includes this state/province
     const Region = mongoose.model('Region');
     const region = await Region.findOne({
@@ -335,12 +382,23 @@ userSchema.pre('save', async function(next) {
       'states.country': this.address.country || 'US'
     });
     
-    if (region && !this.regions.includes(region._id)) {
-      this.regions.push(region._id);
+    if (region) {
+      console.log(`Pre-save hook: Auto-assign region - Found region: ${region._id}`);
+      
+      if (!this.regions.includes(region._id)) {
+        console.log(`Pre-save hook: Auto-assign region - Adding region ${region._id} to user`);
+        this.regions.push(region._id);
+      } else {
+        console.log(`Pre-save hook: Auto-assign region - Region ${region._id} already assigned`);
+      }
+    } else {
+      console.log(`Pre-save hook: Auto-assign region - No region found for state: ${this.address.state}`);
     }
     
+    console.log('Pre-save hook: Auto-assign region - Completed successfully');
     next();
   } catch (error) {
+    console.error('Pre-save hook: Auto-assign region - Error:', error);
     // If Region model isn't loaded yet or other error, just continue
     next();
   }
@@ -348,12 +406,26 @@ userSchema.pre('save', async function(next) {
 
 // Pre-save hook to hash password
 userSchema.pre('save', async function(next) {
+  console.log('Pre-save hook: Password hashing - Starting');
+  
   if (!this.isModified('password')) {
-    next();
+    console.log('Pre-save hook: Password hashing - Password not modified, skipping');
+    return next();
   }
 
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
+  try {
+    console.log('Pre-save hook: Password hashing - Generating salt');
+    const salt = await bcrypt.genSalt(10);
+    
+    console.log('Pre-save hook: Password hashing - Hashing password');
+    this.password = await bcrypt.hash(this.password, salt);
+    
+    console.log('Pre-save hook: Password hashing - Completed successfully');
+    next();
+  } catch (error) {
+    console.error('Pre-save hook: Password hashing - Error:', error);
+    next(error); // Pass the error to the next middleware
+  }
 });
 
 // Add audit entry

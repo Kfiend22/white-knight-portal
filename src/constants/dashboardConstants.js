@@ -139,7 +139,9 @@ export const defaultJobData = {
   },
   
   // Notes
-  notes: '',
+  internalNotes: '',
+  dispatcherNotes: '',
+  invoiceNotes: '',
   
   // Contacts
   pickupContact: {
