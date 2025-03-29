@@ -10,6 +10,7 @@ const userRoutes = require('./routes/userRoutes');
 const authRoutes = require('./routes/authRoutes');
 const regionRoutes = require('./routes/regionRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+const facilityRoutes = require('./routes/facilityRoutes'); // Import facility routes
 const jobRoutes = require('./routes/jobRoutes');
 const driverRoutes = require('./routes/driverRoutes');
 const locationRoutes = require('./routes/locationRoutes');
@@ -44,6 +45,7 @@ app.use('/api/drivers', driverRoutes);
 app.use('/api/location', locationRoutes);
 app.use('/api/user', userRoutes); // Add this route for user/companies endpoint
 app.use('/api/vehicles', vehicleRoutes); // Add new vehicle routes
+app.use('/api/v1/facilities', facilityRoutes); // Register facility routes
 
 // In production, serve the frontend build folder so that unknown routes return index.html
 if (process.env.NODE_ENV === 'production') {

@@ -14,6 +14,8 @@ import { initSocket, disconnectSocket } from './utils/socket';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { NotificationProvider, useNotification, showGlobalNotification } from './context/NotificationContext';
+import { LoadingProvider } from './context/LoadingContext'; // Import LoadingProvider
+import GlobalSpinner from './components/GlobalSpinner'; // Import GlobalSpinner
 import { Snackbar, Alert } from '@mui/material';
 
 // Protected route component that uses the permission system
@@ -600,11 +602,13 @@ function App() {
   
   return (
     <NotificationProvider>
-      <div style={{ 
-        minHeight: '100vh', 
-        display: 'flex', 
+      <LoadingProvider> {/* Wrap with LoadingProvider */}
+        <div style={{ 
+          minHeight: '100vh', 
+          display: 'flex', 
         flexDirection: 'column' 
       }}>
+        <GlobalSpinner /> {/* Add GlobalSpinner here */}
         <Router
           future={{
             v7_startTransition: true,
@@ -624,7 +628,8 @@ function App() {
             <Route path="/payments" element={<ProtectedRoute element={<Payments />} pageName="payments" />} />
             <Route path="/performance" element={<ProtectedRoute element={<Performance />} pageName="performance" />} />
             <Route path="/settings" element={<ProtectedRoute element={<Settings />} pageName="settings" />} />
-            <Route path="/applicationform" element={<ProtectedRoute element={<ApplicationForm />} pageName="applicationform" />} />
+            {/* Make ApplicationForm public */}
+            <Route path="/applicationform" element={<ApplicationForm />} /> 
             <Route path="/submissions" element={<ProtectedRoute element={<Submissions />} pageName="submissions" />} />
             <Route path="/regions" element={<ProtectedRoute element={<Regions />} pageName="regions" />} />
           </Routes>
@@ -636,9 +641,10 @@ function App() {
         {/* Test notification button */}
         <TestNotificationButton />
         
-        {/* Toast container for notifications */}
-        <ToastContainer position="top-right" />
-      </div>
+          {/* Toast container for notifications */}
+          <ToastContainer position="top-right" />
+        </div>
+      </LoadingProvider> {/* Close LoadingProvider */}
     </NotificationProvider>
   );
 }

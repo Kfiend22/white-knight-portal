@@ -24,7 +24,7 @@ function Submissions() {
   const [searchInputValue, setSearchInputValue] = useState('');
   const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
   const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState({});
-  const [isLoading, setIsLoading] = useState(false);
+  // const [isLoading, setIsLoading] = useState(false); // Remove local loading state
   const [error, setError] = useState(null);
   
   // Tab labels and corresponding step values
@@ -156,24 +156,15 @@ function Submissions() {
             </Alert>
           )}
           {/* Apps Component */}
-          <Box mt={2} position="relative">
-            {isLoading && (
-              <Box 
-                position="absolute" 
-                top="50%" 
-                left="50%" 
-                sx={{ transform: 'translate(-50%, -50%)' }}
-              >
-                <CircularProgress />
-              </Box>
-            )}
+          <Box mt={2}> {/* Removed position relative */}
+            {/* Removed local CircularProgress */}
             
             {/* Render the current tab's content */}
             <Apps
               step={tabs[tabValue].step}
               searchQuery={searchQuery}
               advancedSearchCriteria={advancedSearchCriteria}
-              setIsLoading={setIsLoading}
+              // setIsLoading={setIsLoading} // Remove prop
               setError={setError}
             />
           </Box>

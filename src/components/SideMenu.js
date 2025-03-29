@@ -14,6 +14,7 @@ import {
   Menu,
   MenuItem,
   Box,
+  ListItemButton, // <-- Add this
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -126,6 +127,55 @@ function SideMenu() {
     setOpenUploadBackgroundChecksDialog(true);
     handleCloseProfileMenu();
   };
+
+  // --- Background Check Upload Handler ---
+  const handleBackgroundCheckUpload = async (file) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error('No token found for upload.');
+      alert('Authentication error. Please log in again.');
+      return;
+    }
+    if (!file) {
+      alert('No file selected.');
+      return;
+    }
+
+    const formData = new FormData();
+    // Key must match the name used in backend multer: 'backgroundCheckFile'
+    formData.append('backgroundCheckFile', file); 
+
+    try {
+      const response = await fetch('/api/v1/users/profile/upload-background-check', {
+        method: 'PUT',
+        headers: {
+          // DO NOT set Content-Type manually when using FormData
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to upload background check.');
+      }
+
+      console.log('Background check uploaded successfully:', result);
+      alert('Background check uploaded successfully!'); 
+      // Optionally: Refresh profile data or application data if needed
+      // fetchUserProfile(); 
+
+    } catch (error) {
+      console.error('Error uploading background check:', error);
+      alert(`Error uploading background check: ${error.message}`);
+    } finally {
+      // Close the dialog regardless of success or failure
+      setOpenUploadBackgroundChecksDialog(false); 
+    }
+  };
+  // --- End Background Check Upload Handler ---
+
 
   // Fetch user profile data and role when component mounts
   useEffect(() => {
@@ -333,10 +383,11 @@ function SideMenu() {
               navItems
                 .filter(item => hasAccess(item.roles))
                 .map((item) => (
-                  <ListItem button key={item.text} onClick={() => navigate(item.path)}>
-                    <ListItemIcon>{item.icon}</ListItemIcon>
-                    <ListItemText primary={item.text} />
-                    <ListItem component="div" button={true.toString()} />
+                  <ListItem key={item.text} disablePadding> {/* Remove 'button' prop, add disablePadding */}
+                    <ListItemButton onClick={() => navigate(item.path)}> {/* Add ListItemButton and move onClick */}
+                      <ListItemIcon>{item.icon}</ListItemIcon>
+                      <ListItemText primary={item.text} />
+                    </ListItemButton>
                   </ListItem>
                 ))
             ) : (
@@ -370,6 +421,7 @@ function SideMenu() {
       <UploadBackgroundChecksDialog
         open={openUploadBackgroundChecksDialog}
         onClose={() => setOpenUploadBackgroundChecksDialog(false)}
+        onUpload={handleBackgroundCheckUpload} // Pass the upload handler
       />
       
       {/* Logout Confirmation Dialog */}

@@ -2,6 +2,7 @@
 // Controller for user profile-related endpoints
 
 const User = require('../models/userModel');
+const Application = require('../models/Application'); // Import Application model
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
@@ -342,3 +343,71 @@ module.exports = {
   getUserProfile,
   updateUserProfile
 };
+
+/**
+ * Upload background check document and link to user's application
+ * @route PUT /api/v1/users/profile/upload-background-check
+ * @access Private
+ */
+const uploadBackgroundCheck = async (req, res) => {
+  try {
+    // Check if file was uploaded by multer middleware
+    if (!req.file) {
+      return res.status(400).json({ message: 'No background check file uploaded.' });
+    }
+
+    // Get user ID and email from auth middleware
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+
+    if (!userEmail) {
+      return res.status(400).json({ message: 'User email not found in token.' });
+    }
+
+    // Find the application associated with the user's email
+    // Assuming one user email maps to one primary application
+    const application = await Application.findOne({ email: userEmail });
+
+    if (!application) {
+      // If no application found, maybe the user is not an SP or hasn't applied?
+      // Or maybe the background check should be linked differently?
+      // For now, return an error.
+      console.error(`No application found for user email: ${userEmail} (User ID: ${userId})`);
+      return res.status(404).json({ message: 'Application record not found for this user.' });
+    }
+
+    // Construct the relative path for storage/retrieval
+    // Multer saves to backend/uploads/applications/filename.pdf
+    // We want to store 'uploads/applications/filename.pdf'
+    const relativePath = path.join('uploads', 'applications', req.file.filename).replace(/\\/g, '/');
+
+    // Update the backgroundCheck path in the application document
+    if (!application.backgroundCheck) {
+      application.backgroundCheck = {}; // Initialize if it doesn't exist
+    }
+    application.backgroundCheck.path = relativePath;
+    
+    // Optionally update status if needed, e.g., to 'Pending Review'
+    // application.backgroundCheck.status = 'Pending Review'; 
+
+    // Save the updated application document
+    await application.save();
+
+    console.log(`Background check uploaded for user ${userId} (Email: ${userEmail}), linked to application ${application._id}. Path: ${relativePath}`);
+
+    // Return success response, maybe include the updated application or just the path
+    res.json({ 
+      message: 'Background check uploaded successfully.', 
+      filePath: relativePath,
+      applicationId: application._id 
+    });
+
+  } catch (error) {
+    console.error('Error uploading background check:', error);
+    // Clean up uploaded file if database update fails? Maybe not, admin might need it.
+    res.status(500).json({ message: 'Server error during background check upload.' });
+  }
+};
+
+// Add the function to the exports AFTER its definition
+module.exports.uploadBackgroundCheck = uploadBackgroundCheck;

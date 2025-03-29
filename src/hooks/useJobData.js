@@ -2,14 +2,16 @@ import { useState, useEffect, useCallback } from 'react';
 import useJobSocket from './useJobSocket';
 import * as jobService from '../services/jobDashboardService';
 import * as authUtils from '../utils/authUtils';
+import { useLoading } from '../context/LoadingContext'; // Import useLoading
 
 const useJobData = (jobCategory, onSocketStatusChange) => {
   // State management
   const [jobs, setJobs] = useState([]);
   const [drivers, setDrivers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // const [loading, setLoading] = useState(true); // Remove local loading state
   const [error, setError] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
+  const { startLoading } = useLoading(); // Get startLoading from global context
 
   // Custom hook for socket connection with custom handler for job updates
   const { socketConnected, fetchInProgressRef } = useJobSocket({
@@ -29,12 +31,11 @@ const useJobData = (jobCategory, onSocketStatusChange) => {
   
   // Fetch jobs from the server
   const fetchJobs = useCallback(async () => {
-    setLoading(true);
+    const stopLoading = startLoading(); // Start global loading
     setError(null);
     
     try {
       // Use the jobService to fetch jobs, passing current jobs to preserve expanded state
-      // Including 'jobs' in the dependency array to fix ESLint warning
       const processedJobs = await jobService.fetchJobs(jobCategory, jobs);
       console.log('Fetched jobs with preserved expanded state:', 
         processedJobs.map(job => ({ id: job.id, expanded: job.expanded }))
@@ -44,26 +45,30 @@ const useJobData = (jobCategory, onSocketStatusChange) => {
       console.error('Error fetching jobs:', err);
       setError(err.response?.data?.message || 'Failed to load jobs');
     } finally {
-      setLoading(false);
+      stopLoading(); // Stop global loading
     }
     
     // Return a promise that resolves when the fetch is complete
     return Promise.resolve();
   }, [jobCategory, jobs]); // Added 'jobs' to dependency array to fix ESLint warning
 
-  // Fetch drivers from the server
+  // Fetch drivers from the server - Also use global loading
   const fetchDrivers = useCallback(async () => {
+    const stopLoading = startLoading(); // Start global loading
     try {
       // Use the jobService to fetch drivers
       const driversData = await jobService.fetchDrivers();
       setDrivers(driversData);
     } catch (err) {
       console.error('Error fetching drivers:', err);
+    } finally {
+      stopLoading(); // Stop global loading
     }
-  }, []);
+  }, [startLoading]); // Add startLoading dependency
 
-  // Fetch current user information
+  // Fetch current user information - Also use global loading
   const fetchCurrentUser = useCallback(async () => {
+    const stopLoading = startLoading(); // Start global loading
     try {
       // Use the jobService to fetch the current user
       const userData = await jobService.fetchCurrentUser();
@@ -75,8 +80,10 @@ const useJobData = (jobCategory, onSocketStatusChange) => {
       }
     } catch (error) {
       console.error('Error fetching user profile:', error);
+    } finally {
+      stopLoading(); // Stop global loading
     }
-  }, []);
+  }, [startLoading]); // Add startLoading dependency
 
   // Auto-refresh interval disabled
   useEffect(() => {
@@ -196,9 +203,9 @@ const useJobData = (jobCategory, onSocketStatusChange) => {
     };
   }, [refreshUser]);
 
-  // Delete a job
+  // Delete a job - Also use global loading
   const deleteJob = useCallback(async (jobId) => {
-    setLoading(true);
+    const stopLoading = startLoading(); // Start global loading
     try {
       // Call the service to delete the job
       await jobService.deleteJob(jobId);
@@ -214,16 +221,16 @@ const useJobData = (jobCategory, onSocketStatusChange) => {
         message: error.response?.data?.message || 'Failed to delete job' 
       };
     } finally {
-      setLoading(false);
+      stopLoading(); // Stop global loading
     }
-  }, []);
+  }, [startLoading]); // Add startLoading dependency
 
   return {
     jobs,
     setJobs,
     drivers,
-    loading,
-    setLoading,
+    // loading, // Removed local loading state
+    // setLoading, // Removed local loading state setter
     error,
     currentUser,
     socketConnected,

@@ -15,6 +15,7 @@ import {
   Link,
 } from '@mui/material';
 import Grid2 from '@mui/material/Grid2';
+import ScheduleInput from '../ScheduleInput'; // Import ScheduleInput
 
 const countries = [
   'United States',
@@ -45,6 +46,23 @@ const yearsOptions = [
   '1-5 years',
   '5-10 years',
   'More than 10 years',
+];
+
+const dispatchSoftwareOptions = [
+  'TRAXERO Dispatch Anywhere',
+  'Towbook',
+  'Bosch Towing Management',
+  'OctopusPro',
+  'Roadside Protect Navigator',
+  'Agero Swoop',
+  'TowSoft',
+  'Omadi Core',
+  'InTow Software',
+  'TOPS (Beacon)',
+  'VTS Cloud',
+  'Ranger SST',
+  'Other',
+  // Add more as needed
 ];
 
 const ApplicationForm = () => {
@@ -81,8 +99,24 @@ const ApplicationForm = () => {
       accidentSceneTowing: false,
       secondaryTow: false,
       storageFacility: false,
-      open247: 'yes',
-      hoursOfOperation: '',
+      // open247: 'yes', // Replaced by schedule object
+      // hoursOfOperation: '', // Replaced by schedule object
+      schedule: { // Add initial schedule state
+        open247: true, // Default to true for public form? Or false? Let's start with true.
+        sameEveryDay: false,
+        sameTimeSelectedDays: false,
+        everyDayOpen: '',
+        everyDayClose: '',
+        days: {
+          monday: { isOpen: false, open: '', close: '' },
+          tuesday: { isOpen: false, open: '', close: '' },
+          wednesday: { isOpen: false, open: '', close: '' },
+          thursday: { isOpen: false, open: '', close: '' },
+          friday: { isOpen: false, open: '', close: '' },
+          saturday: { isOpen: false, open: '', close: '' },
+          sunday: { isOpen: false, open: '', close: '' }
+        }
+      }
     },
     territories: {
       zipCodeFile: null,
@@ -108,6 +142,9 @@ const ApplicationForm = () => {
       yearsInBusiness: '',
       electricVehicleExp: '',
       digitalDispatch: '',
+      dispatchSoftware: '', // Added field for dispatch software
+      otherMotorclubServices: '', // Added field for other motor clubs
+      otherMotorclubsList: '', // Added field for listing other motor clubs
     },
     ownership: {
       familyOwned: false,
@@ -197,17 +234,37 @@ const ApplicationForm = () => {
     }
   };
 
-  // Handler for nested fields (services)
+  // Handler for nested fields (services - excluding schedule)
   const handleServicesChange = (e) => {
-    const { name, value, checked, type } = e.target;
+    const { name, checked } = e.target; // Only checkboxes left here directly under services
     setFormData((prev) => ({
       ...prev,
       services: {
         ...prev.services,
-        [name]: type === 'checkbox' ? checked : value,
+        [name]: checked,
       },
     }));
   };
+
+  // Handler for schedule changes within services
+  const handleServiceScheduleChange = (fieldPath, value) => {
+     setFormData(prev => {
+       const keys = fieldPath.split('.');
+       let currentLevel = { ...(prev.services?.schedule || {}) }; // Start with schedule
+       let tempRef = currentLevel;
+
+       for (let i = 0; i < keys.length - 1; i++) {
+         const key = keys[i];
+         if (!tempRef[key] || typeof tempRef[key] !== 'object') {
+           tempRef[key] = {};
+         }
+         tempRef = tempRef[key];
+       }
+       tempRef[keys[keys.length - 1]] = value;
+       return { ...prev, services: { ...(prev.services || {}), schedule: currentLevel } };
+     });
+  };
+
 
   // Handler for territories
   const handleTerritoriesChange = (e) => {
@@ -665,31 +722,14 @@ const ApplicationForm = () => {
             label="Storage at Facility"
           />
         </FormGroup>
-        <InputLabel id="open247-label">Are you open 24/7?</InputLabel>
-        <Select
-          fullWidth
-          labelId="open247-label"
-          name="open247"
-          value={formData.services.open247}
-          onChange={handleServicesChange}
-          margin="dense"
-        >
-          {yesNoOptions.map((option) => (
-            <MenuItem key={option.value} value={option.value}>
-              {option.label}
-            </MenuItem>
-          ))}
-        </Select>
-        {formData.services.open247 === 'no' && (
-          <TextField
-            fullWidth
-            label="Please list your hours of operation"
-            name="hoursOfOperation"
-            value={formData.services.hoursOfOperation}
-            onChange={handleServicesChange}
-            margin="dense"
-          />
-        )}
+        {/* Replace hours section with ScheduleInput */}
+        <Box sx={{ mt: 1 }}>
+           <ScheduleInput
+             scheduleData={formData.services?.schedule || {}}
+             onChange={handleServiceScheduleChange}
+             // disabled={false} // Not disabled on public form
+           />
+        </Box>
       </Box>
 
       {/* Territories */}
@@ -953,6 +993,67 @@ const ApplicationForm = () => {
             </MenuItem>
           ))}
         </Select>
+
+        {/* Conditionally render Dispatch Software dropdown */}
+        {formData.businessInfo.digitalDispatch === 'yes' && (
+          <>
+            <InputLabel id="dispatch-software-label" sx={{ mt: 2 }}>
+              Which dispatch software do you use?
+            </InputLabel>
+            <Select
+              fullWidth
+              labelId="dispatch-software-label"
+              name="dispatchSoftware" // Ensure name matches state key
+              value={formData.businessInfo.dispatchSoftware}
+              onChange={handleBusinessInfoChange} // Reuse existing handler
+              margin="dense"
+            >
+              {dispatchSoftwareOptions.map((software) => (
+                <MenuItem key={software} value={software}>
+                  {software}
+                </MenuItem>
+              ))}
+            </Select>
+          </>
+        )}
+
+        {/* Add Other Motorclub Services Question */}
+        <InputLabel id="other-motorclub-label" sx={{ mt: 2 }}>
+          Do you provide services for any other motorclubs?
+        </InputLabel>
+        <Select
+          fullWidth
+          labelId="other-motorclub-label"
+          name="otherMotorclubServices"
+          value={formData.businessInfo.otherMotorclubServices}
+          onChange={handleBusinessInfoChange}
+          margin="dense"
+        >
+          {yesNoOptions.map((option) => (
+            <MenuItem key={option.value} value={option.value}>
+              {option.label}
+            </MenuItem>
+          ))}
+        </Select>
+
+        {/* Conditionally render Motorclub List field */}
+        {formData.businessInfo.otherMotorclubServices === 'yes' && (
+          <>
+            <InputLabel id="other-motorclubs-list-label" sx={{ mt: 2 }}>
+              Please list the other motorclubs you service (separate with commas):
+            </InputLabel>
+            <TextField
+              fullWidth
+              labelId="other-motorclubs-list-label"
+              name="otherMotorclubsList"
+              value={formData.businessInfo.otherMotorclubsList}
+              onChange={handleBusinessInfoChange}
+              margin="dense"
+              multiline
+              rows={3}
+            />
+          </>
+        )}
       </Box>
 
       {/* Business Ownership */}

@@ -8,7 +8,8 @@ import {
   Button,
 } from '@mui/material';
 
-function UploadBackgroundChecksDialog({ open, onClose }) {
+// Accept onUpload prop
+function UploadBackgroundChecksDialog({ open, onClose, onUpload }) { 
   const [file, setFile] = useState(null);
 
   const handleFileChange = (event) => {
@@ -18,14 +19,15 @@ function UploadBackgroundChecksDialog({ open, onClose }) {
   };
 
   const handleUpload = () => {
-    if (file) {
-      // Handle file upload
-      // Implement the fetch request or call a function passed via props
-      // Then close the dialog
-      onClose();
-      setFile(null);
-    } else {
+    if (file && onUpload) { // Check if file and onUpload exist
+      onUpload(file); // Call the passed-in upload handler
+      // No need to call onClose() here, the parent handler does it
+      setFile(null); // Reset file state
+    } else if (!file) {
       alert('Please select a file to upload.');
+    } else {
+      console.error('onUpload prop is missing from UploadBackgroundChecksDialog');
+      alert('Upload configuration error.');
     }
   };
 
